@@ -11,14 +11,17 @@ public class IndependentTopSpawner : MonoBehaviour
 	public float spawnInterval = 1f;
 	public float minDistanceBetweenSpawns = 1f;
 	public int maxSpawnAttempts = 10;
-	[Tooltip("How far off-screen to the right items should initially appear")]
-	public float offscreenSpawnOffset = 1f;
 
-	private float timer = 0f;
-	private List<Transform> allSpawned = new List<Transform>();
+	[Tooltip("Optional extra range in world-units for X, measured from top-left pivot")]
+	public Vector2 spawnXOffsetRange = new Vector2(1f, 1.5f);
+	[Tooltip("Optional extra range in world-units for Y, measured down from top-left pivot")]
+	public Vector2 spawnYOffsetRange = new Vector2(0f, -0.5f);
 
 	[Tooltip("Must match the RideWithBackground scrollSpeed")]
 	public float scrollSpeed = 2f;
+
+	private float timer = 0f;
+	private List<Transform> allSpawned = new List<Transform>();
 
 	void Awake()
 	{
@@ -45,21 +48,17 @@ public class IndependentTopSpawner : MonoBehaviour
 		// Clean up destroyed entries
 		allSpawned.RemoveAll(t => t == null);
 
-		// Get world‐space camera bounds
-		Vector3 bl = mainCam.ViewportToWorldPoint(new Vector3(0, 0, mainCam.nearClipPlane));
-		Vector3 tr = mainCam.ViewportToWorldPoint(new Vector3(1, 1, mainCam.nearClipPlane));
-		float midY = (bl.y + tr.y) * 0.5f;
-
-		// Define X‐range so spawns occur just off the right edge
-		float spawnXMin = tr.x + offscreenSpawnOffset;
-		float spawnXMax = tr.x + offscreenSpawnOffset + /* optional extra range */ 0.5f;
+		// Compute world‐space position of the top-left corner
+		Vector3 topLeft = mainCam.ViewportToWorldPoint(
+			new Vector3(0, 1, mainCam.nearClipPlane)
+		);
 
 		for (int attempt = 0; attempt < maxSpawnAttempts; attempt++)
 		{
-			// random X in the off-screen band
-			float x = Random.Range(spawnXMin, spawnXMax);
-			// random Y in top half
-			float y = Random.Range(midY, tr.y);
+			// pick a random X offset from spawnXOffsetRange
+			float x = topLeft.x + Random.Range(spawnXOffsetRange.x, spawnXOffsetRange.y);
+			// pick a random Y offset (negative means downwards)
+			float y = topLeft.y + Random.Range(spawnYOffsetRange.x, spawnYOffsetRange.y);
 
 			Vector3 spawnPos = new Vector3(x, y, 0f);
 
@@ -75,11 +74,13 @@ public class IndependentTopSpawner : MonoBehaviour
 			}
 			if (tooClose) continue;
 
-			// spawn unparented in world-space
+			// instantiate and give it the rider script
 			GameObject go = Instantiate(prefab, spawnPos, Quaternion.identity);
-			// add the rider script if not already on the prefab
-			if (go.GetComponent<RideWithBackground>() == null)
-				go.AddComponent<RideWithBackground>().scrollSpeed = scrollSpeed;
+			var rider = go.GetComponent<RideWithBackground>();
+			if (rider == null)
+				rider = go.AddComponent<RideWithBackground>();
+			rider.scrollSpeed = scrollSpeed;
+
 			allSpawned.Add(go.transform);
 			return;
 		}

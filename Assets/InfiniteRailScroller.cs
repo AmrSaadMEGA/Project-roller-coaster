@@ -1,11 +1,14 @@
 using System.Collections.Generic;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 /// <summary>
 /// Attach this script to an empty GameObject. Assign your rail segments
-/// (as Transforms) in the inspector. On Start, it arranges them side-by-side,
-/// then continuously scrolls them left. When the leftmost rail fully moves off-screen,
-/// it becomes the new rightmost rail.
+/// (as Transforms) in the inspector. On Start, it arranges them side-by-side
+/// (with an optional offset), then continuously scrolls them left. When the
+/// leftmost rail fully moves off-screen, it becomes the new rightmost rail.
 /// </summary>
 public class InfiniteRailScroller : MonoBehaviour
 {
@@ -14,6 +17,10 @@ public class InfiniteRailScroller : MonoBehaviour
 
 	[Tooltip("Scroll speed in units per second")]
 	public float scrollSpeed = 5f;
+
+	[Header("Start Offset (world units)")]
+	[Tooltip("Initial offset applied to all rails before tiling")]
+	public Vector2 startOffset = Vector2.zero;
 
 	private float railWidth;
 	private Camera mainCam;
@@ -31,12 +38,15 @@ public class InfiniteRailScroller : MonoBehaviour
 		mainCam = Camera.main;
 		railWidth = rails[0].GetComponent<SpriteRenderer>().bounds.size.x;
 
-		// Initial arrangement side-by-side
+		// Initial arrangement side-by-side, then apply startOffset
 		for (int i = 0; i < rails.Count; i++)
 		{
-			rails[i].position = new Vector3(transform.position.x + i * railWidth,
-											rails[i].position.y,
-											rails[i].position.z);
+			Vector3 basePos = new Vector3(
+				transform.position.x + i * railWidth,
+				rails[i].position.y,
+				rails[i].position.z
+			);
+			rails[i].position = basePos + new Vector3(startOffset.x, startOffset.y, 0f);
 		}
 	}
 
@@ -47,7 +57,9 @@ public class InfiniteRailScroller : MonoBehaviour
 			rail.Translate(Vector3.left * scrollSpeed * Time.deltaTime, Space.World);
 
 		// Calculate world-space left edge of camera
-		screenLeftX = mainCam.ViewportToWorldPoint(new Vector3(0, 0.5f, mainCam.nearClipPlane)).x;
+		screenLeftX = mainCam.ViewportToWorldPoint(
+			new Vector3(0, 0.5f, mainCam.nearClipPlane)
+		).x;
 
 		// Identify leftmost rail
 		Transform leftmost = rails[0];
@@ -55,8 +67,8 @@ public class InfiniteRailScroller : MonoBehaviour
 			if (r.position.x < leftmost.position.x)
 				leftmost = r;
 
-		// If leftmost rail's right edge is off-screen
-		float rightEdgeX = leftmost.position.x + railWidth / 2f;
+		// If leftmost rail's right edge is off-screen, wrap it to the right
+		float rightEdgeX = leftmost.position.x + railWidth * 0.5f;
 		if (rightEdgeX < screenLeftX)
 		{
 			// Find current rightmost rail
@@ -73,4 +85,44 @@ public class InfiniteRailScroller : MonoBehaviour
 			);
 		}
 	}
+
+#if UNITY_EDITOR
+	// Draw gizmos when this object is selected
+	void OnDrawGizmosSelected()
+	{
+		if (rails == null || rails.Count < 2)
+			return;
+
+		// Draw root point
+		Gizmos.color = Color.yellow;
+		Vector3 root = transform.position;
+		Gizmos.DrawSphere(root, 0.1f);
+		Handles.Label(root, "Scroller Root");
+
+		// Draw startOffset vector
+		Vector3 offsetPos = root + new Vector3(startOffset.x, startOffset.y, 0f);
+		Gizmos.color = Color.cyan;
+		Gizmos.DrawLine(root, offsetPos);
+		Handles.Label(offsetPos, $"Offset ({startOffset.x}, {startOffset.y})");
+
+		// Draw border around each rail
+		Gizmos.color = Color.green;
+		foreach (var rail in rails)
+		{
+			var sr = rail.GetComponent<SpriteRenderer>();
+			if (sr == null) continue;
+
+			Bounds b = sr.bounds;
+			Vector3 tl = new Vector3(b.min.x, b.max.y, b.center.z);
+			Vector3 tr = new Vector3(b.max.x, b.max.y, b.center.z);
+			Vector3 br = new Vector3(b.max.x, b.min.y, b.center.z);
+			Vector3 bl = new Vector3(b.min.x, b.min.y, b.center.z);
+
+			Gizmos.DrawLine(tl, tr);
+			Gizmos.DrawLine(tr, br);
+			Gizmos.DrawLine(br, bl);
+			Gizmos.DrawLine(bl, tl);
+		}
+	}
+#endif
 }

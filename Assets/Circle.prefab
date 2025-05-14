@@ -102,7 +102,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0633e88154466ba419ee20a863f91119, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  itemName: Pumkin
+  itemName: Pumpkin
 --- !u!58 &3891968868490957553
 CircleCollider2D:
   m_ObjectHideFlags: 0
