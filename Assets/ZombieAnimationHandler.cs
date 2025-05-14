@@ -1,34 +1,43 @@
 using UnityEngine;
 
 /// <summary>
-/// Handles animation events for the zombie character.
-/// This script should be attached to the same GameObject as the Animator component.
+/// This component handles animation events from the Zombie's Animator
 /// </summary>
 public class ZombieAnimationHandler : MonoBehaviour
 {
-	// Reference to the ZombieController that manages targeting
 	private ZombieController zombieController;
 
 	void Awake()
 	{
-		// Get the reference to the ZombieController on this GameObject
+		// Get the zombie controller from the parent (or this game object)
 		zombieController = GetComponentInParent<ZombieController>();
 
 		if (zombieController == null)
 		{
-			Debug.LogError("ZombieAnimationHandler requires a ZombieController component on the same GameObject.");
+			Debug.LogError("ZombieAnimationHandler couldn't find a ZombieController component");
 		}
 	}
 
-	/// <summary>
-	/// Called via Animation Event at the end of the eating animation.
-	/// </summary>
+	// Animation event for when eating animation ends
 	public void OnEatingAnimationEnd()
 	{
-		// Forward the animation event to the ZombieController
 		if (zombieController != null)
 		{
 			zombieController.HandleEatingAnimationEnd();
 		}
+	}
+
+	// Animation event for when throwing animation ends
+	public void OnThrowingAnimationEnd()
+	{
+		// This method will be called by the animator when the throwing animation completes
+		// Currently, the zombie controller's throwing coroutine handles this timing
+	}
+
+	// Animation event for when cross-cart movement animation ends
+	public void OnCrossCartMoveEnd()
+	{
+		// This method will be called by the animator when the cross-cart move animation completes
+		// Currently, the zombie controller's cart switch coroutine handles this timing
 	}
 }

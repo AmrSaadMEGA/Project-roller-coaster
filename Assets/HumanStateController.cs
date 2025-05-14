@@ -23,11 +23,12 @@ public class HumanStateController : MonoBehaviour
 	private float defensiveDuration;
 	private float stateTimer;
 
-	private enum State { Vulnerable, Defensive, Dead }
+	public enum State { Vulnerable, Defensive, Dead }
 	private State currentState;
 
 	private Animator animator;
 	public bool IsVulnerable() => currentState == State.Vulnerable;
+	public bool IsDead() => currentState == State.Dead;
 
 	// Add a public getter to access the current state as a string (for debugging)
 	public string CurrentStateAsString => currentState.ToString();
@@ -49,9 +50,11 @@ public class HumanStateController : MonoBehaviour
 		currentState = State.Vulnerable;
 		stateTimer = vulnerableDuration;
 
-		// Make sure the Animator shows the initial state
-		if (animator != null)
-			animator.Play(vulnerableStateName);
+		// Make sure the DeadHumanThrower component is present
+		if (GetComponent<DeadHumanThrower>() == null)
+		{
+			gameObject.AddComponent<DeadHumanThrower>();
+		}
 	}
 
 	void Update()

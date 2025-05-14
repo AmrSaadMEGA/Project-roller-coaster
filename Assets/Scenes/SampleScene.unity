@@ -259,7 +259,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: -0.12, y: 0.01}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -269,7 +269,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.5, y: 1.5}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!4 &97926136
 Transform:
@@ -353,7 +353,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: -0.12, y: 0.01}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -363,7 +363,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.5, y: 1.5}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!114 &102701814
 MonoBehaviour:
@@ -1266,7 +1266,7 @@ GameObject:
   - component: {fileID: 694429983}
   - component: {fileID: 694429982}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: Zombie
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1286,16 +1286,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   eatingStateName: Eating
   moveToSeatStateName: MoveToSeat
+  throwingStateName: Throwing
+  crossCartMoveStateName: CrossCartMove
   currentCart: {fileID: 1730579894}
   currentSeatIndex: 1
-  seatLayerMask:
-    serializedVersion: 2
-    m_Bits: 0
-  humanLayerMask:
-    serializedVersion: 2
-    m_Bits: 0
-  frontDetectionDistance: 3
   seatSwitchDuration: 1
+  cartSwitchDuration: 2
+  adjacentCartDistance: 5.6
+  seatClickRadius: 0.5
+  humanClickRadius: 0.5
+  deadHumanClickRadius: 0.5
+  throwAnimationDuration: 1
   debugMode: 1
 --- !u!4 &694429983
 Transform:
@@ -1306,7 +1307,7 @@ Transform:
   m_GameObject: {fileID: 694429981}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.3128314, y: 2.0066352, z: -0.013612276}
+  m_LocalPosition: {x: -3.3128314, y: 1.95, z: -0.013612276}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1731,7 +1732,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: -0.12, y: 0.2}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -1741,7 +1742,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.5, y: 1.5}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!114 &849512132
 MonoBehaviour:
@@ -2419,7 +2420,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: 0.21, y: -0.17}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -2429,7 +2430,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.5, y: 1.5}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!114 &1266493021
 MonoBehaviour:
@@ -2769,7 +2770,7 @@ Transform:
   m_GameObject: {fileID: 1419804905}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.07, y: -1.07, z: 0}
+  m_LocalPosition: {x: -0.1, y: 1.81, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2809,7 +2810,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: 0.19, y: -0.01}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -2819,7 +2820,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.88, y: 3.43}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!114 &1419804908
 MonoBehaviour:
@@ -3337,7 +3338,7 @@ Transform:
   m_GameObject: {fileID: 1869892457}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.03, y: 0.69, z: 0}
+  m_LocalPosition: {x: -1, y: 2.89, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3377,7 +3378,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: -1.49}
+  m_Offset: {x: -0.12, y: 0.01}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -3387,7 +3388,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 1.88, y: 3.43}
+  m_Size: {x: 3.53, y: 1.12}
   m_EdgeRadius: 0
 --- !u!114 &1869892460
 MonoBehaviour:
@@ -3574,6 +3575,7 @@ GameObject:
   - component: {fileID: 1955696981}
   - component: {fileID: 1955696984}
   - component: {fileID: 1955696985}
+  - component: {fileID: 1955696986}
   m_Layer: 3
   m_Name: Square (1)
   m_TagString: Untagged
@@ -3752,6 +3754,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   occupiedSeat: {fileID: 1266493021}
+--- !u!114 &1955696986
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955696979}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b33e1efedc26cf44fba85cdd800f5c42, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  throwingStateName: Throwing
+  throwDuration: 1.5
+  throwArcHeight: 2
+  throwDistance: 3
+  throwDirection: {x: -1, y: 0}
+  debugMode: 1
 --- !u!1 &1957931332
 GameObject:
   m_ObjectHideFlags: 0
@@ -4053,6 +4073,7 @@ GameObject:
   - component: {fileID: 2072963159}
   - component: {fileID: 2072963161}
   - component: {fileID: 2072963162}
+  - component: {fileID: 2072963163}
   m_Layer: 3
   m_Name: Square
   m_TagString: Untagged
@@ -4231,6 +4252,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   occupiedSeat: {fileID: 97926134}
+--- !u!114 &2072963163
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2072963156}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b33e1efedc26cf44fba85cdd800f5c42, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  throwingStateName: Throwing
+  throwDuration: 1.5
+  throwArcHeight: 2
+  throwDistance: 3
+  throwDirection: {x: -1, y: 0}
+  debugMode: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
