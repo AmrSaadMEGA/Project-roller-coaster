@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 1489727742360054987}
   - component: {fileID: 5250047920976725213}
   - component: {fileID: 1849895005494152337}
+  - component: {fileID: 3794616300549865955}
   m_Layer: 3
   m_Name: Square
   m_TagString: Untagged
@@ -230,3 +231,18 @@ MonoBehaviour:
   walkAnimationState: Walking
   idleAnimationState: Idle
   showPath: 1
+--- !u!114 &3794616300549865955
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7523194555809352182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bc342a160cc3af946ab15ef2bca4203e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  screamingStateName: Screaming
+  screamDuration: 5
+  panicRunSpeedMultiplier: 0.5

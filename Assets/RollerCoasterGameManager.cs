@@ -11,6 +11,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 	[SerializeField] private InfiniteRailScroller railScroller;
 	[SerializeField] private Transform humanGatheringPoint;
 	[SerializeField] private ZombieController zombie;
+	[SerializeField] private ZombieHidingSystem zombieHidingSystem; // Added reference to ZombieHidingSystem
 
 	[Header("Humans")]
 	[SerializeField] private GameObject humanPrefab;
@@ -24,18 +25,24 @@ public class RollerCoasterGameManager : MonoBehaviour
 	[SerializeField] private float boardingDuration = 2f;
 	[SerializeField] private float rideSpeed = 5f;
 	[SerializeField] private float restartDelay = 3f;
+	[SerializeField] private float zombieWaitTime = 2f; // Added wait time for zombie to take seat
+	[SerializeField] private float waitForZombieHidingTime = 5f; // Time to wait for player to hide zombie
 
 	// Private variables
 	private List<GameObject> spawnedHumans = new List<GameObject>();
-	private bool zombieInFrontCart = false;
+	private bool zombieInFrontCart = false; // Keeping this for backward compatibility
 	private bool allHumansDead = false;
 	private float originalScrollSpeed;
+	private bool zombieSeated = false; // New flag to track if zombie is seated
+	private Coroutine gameLoopCoroutine; // Store reference to allow stopping
 
 	// Game states
 	public enum GameState
 	{
 		HumansGathering,
+		WaitingForZombieToHide, // New state for waiting for player to hide zombie
 		HumansBoardingTrain,
+		ZombieBoarding, // New state for zombie boarding
 		RideInProgress,
 		RideComplete,
 		RideRestarting
@@ -43,6 +50,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	// Public accessor for current state
 	public GameState CurrentState => currentState;
+
+	// Expose railScroller for other components
+	public InfiniteRailScroller RailScroller => railScroller;
 
 	private void Awake()
 	{
@@ -61,6 +71,27 @@ public class RollerCoasterGameManager : MonoBehaviour
 			return;
 		}
 
+		// Find ZombieHidingSystem if not assigned
+		if (zombieHidingSystem == null)
+		{
+			zombieHidingSystem = zombie.GetComponent<ZombieHidingSystem>();
+			if (zombieHidingSystem == null)
+			{
+				Debug.LogError("RollerCoasterGameManager needs a reference to the ZombieHidingSystem!");
+				enabled = false;
+				return;
+			}
+		}
+
+		// Set rail scroller on zombie hiding system
+		var railScrollerField = zombieHidingSystem.GetType().GetField("railScroller",
+			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+		if (railScrollerField != null)
+		{
+			railScrollerField.SetValue(zombieHidingSystem, railScroller);
+		}
+
 		// Store original scroll speed
 		originalScrollSpeed = railScroller.scrollSpeed;
 	}
@@ -74,24 +105,130 @@ public class RollerCoasterGameManager : MonoBehaviour
 		SortCartsByPosition();
 
 		// Begin the game flow
-		StartCoroutine(GameLoop());
+		gameLoopCoroutine = StartCoroutine(GameLoop());
 	}
 
 	private void Update()
 	{
-		if (currentState == GameState.RideInProgress)
+		// Check if we're waiting for zombie to hide and need to monitor status
+		if (currentState == GameState.WaitingForZombieToHide)
 		{
-			// Check if zombie is in the front cart
-			CheckZombiePosition();
-
-			// Check if all humans are dead
+			if (zombieHidingSystem != null && zombieHidingSystem.IsHidden)
+			{
+				// Zombie is hidden, we can proceed to boarding
+				StopCoroutine(gameLoopCoroutine);
+				gameLoopCoroutine = StartCoroutine(GameLoop());
+			}
+		}
+		else if (currentState == GameState.ZombieBoarding)
+		{
+			// Check if zombie has successfully unhidden and taken its seat
+			if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
+			{
+				zombieSeated = true;
+				Debug.Log("Zombie has seated. Ready to start the ride!");
+			}
+		}
+		else if (currentState == GameState.RideInProgress)
+		{
+			// Check if all humans are dead - that's now enough to complete the ride
 			CheckHumansStatus();
 
-			// If both conditions are met, the ride is complete
-			if (zombieInFrontCart && allHumansDead)
+			// If all humans are dead, the ride is complete - no need to check zombie position
+			if (allHumansDead)
 			{
 				currentState = GameState.RideComplete;
 				StartCoroutine(CompleteRide());
+			}
+		}
+		else if (currentState == GameState.HumansBoardingTrain)
+		{
+			// If zombie becomes visible during boarding, humans should run away
+			if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
+			{
+				// Stop the current game loop
+				if (gameLoopCoroutine != null)
+				{
+					StopCoroutine(gameLoopCoroutine);
+				}
+
+				// Set state back to waiting for zombie to hide
+				currentState = GameState.WaitingForZombieToHide;
+
+				// Cause humans to run away
+				StartCoroutine(MakeHumansRunAway());
+
+				// Restart game loop after a delay
+				StartCoroutine(RestartGameLoopAfterDelay(restartDelay));
+			}
+		}
+
+		// Periodic check for stray humans that aren't in our list
+		if (Time.frameCount % 120 == 0) // Check roughly every 2 seconds at 60FPS
+		{
+			int trackedCount = spawnedHumans.Count;
+			int actualCount = FindObjectsOfType<HumanStateController>().Length;
+
+			// If we have more humans in the scene than in our list, there are strays
+			if (actualCount > trackedCount)
+			{
+				Debug.LogWarning($"Found stray humans: Tracked={trackedCount}, Actual={actualCount}");
+
+				// If in gathering phase, just fix our list
+				if (currentState == GameState.HumansGathering)
+				{
+					// Add all humans to our tracked list to ensure proper cleanup later
+					HumanStateController[] allHumans = FindObjectsOfType<HumanStateController>();
+					foreach (HumanStateController human in allHumans)
+					{
+						if (human != null && human.gameObject != null)
+						{
+							// Check if this human is already in our list
+							bool found = false;
+							foreach (GameObject trackedHuman in spawnedHumans)
+							{
+								if (trackedHuman == human.gameObject)
+								{
+									found = true;
+									break;
+								}
+							}
+
+							// If not found, add it
+							if (!found)
+							{
+								Debug.Log($"Adding stray human {human.gameObject.name} to tracked list");
+								spawnedHumans.Add(human.gameObject);
+							}
+						}
+					}
+				}
+				// Otherwise, clean up immediately
+				else
+				{
+					Debug.Log("Cleaning up stray humans");
+					HumanStateController[] allHumans = FindObjectsOfType<HumanStateController>();
+					foreach (HumanStateController human in allHumans)
+					{
+						// Check if this human is in our tracked list
+						bool found = false;
+						foreach (GameObject trackedHuman in spawnedHumans)
+						{
+							if (trackedHuman == human.gameObject)
+							{
+								found = true;
+								break;
+							}
+						}
+
+						// If not in our list, it's a stray
+						if (!found && human != null && human.gameObject != null)
+						{
+							Debug.Log($"Destroying stray human {human.gameObject.name}");
+							Destroy(human.gameObject);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -104,9 +241,85 @@ public class RollerCoasterGameManager : MonoBehaviour
 			currentState = GameState.HumansGathering;
 			yield return StartCoroutine(SpawnAndGatherHumans());
 
-			// PHASE 2: Humans boarding coaster
+			// ALWAYS WAIT FOR ZOMBIE TO HIDE before proceeding to boarding
+			// This is the crucial change to ensure humans don't board until zombie is hidden
+			if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
+			{
+				currentState = GameState.WaitingForZombieToHide;
+				Debug.Log("Waiting for player to hide the zombie...");
+
+				// Wait for the player to hide the zombie up to a max time
+				float waitTime0 = 0;
+				while (!zombieHidingSystem.IsHidden && waitTime0 < waitForZombieHidingTime)
+				{
+					waitTime0 += Time.deltaTime;
+					yield return null;
+				}
+
+				// If zombie is still not hidden, cause humans to run away
+				if (!zombieHidingSystem.IsHidden)
+				{
+					Debug.Log("Player didn't hide the zombie in time! Humans are running away.");
+					yield return StartCoroutine(MakeHumansRunAway());
+
+					// Restart the game loop after a delay
+					yield return new WaitForSeconds(restartDelay);
+					continue; // Skip to next iteration of the loop
+				}
+			}
+
+			// PHASE 2: Humans boarding coaster (only if zombie is hidden)
+			// Double-check zombie is hidden before proceeding
+			if (!zombieHidingSystem.IsHidden)
+			{
+				Debug.LogWarning("Zombie not hidden before boarding phase! Restarting game loop...");
+				yield return new WaitForSeconds(restartDelay);
+				continue; // Skip to next iteration of the loop
+			}
+
 			currentState = GameState.HumansBoardingTrain;
 			yield return StartCoroutine(BoardHumansOnCoaster());
+
+			// Check if any humans are seated
+			bool humansSeated = false;
+			foreach (RollerCoasterCart cart in coasterCarts)
+			{
+				foreach (RollerCoasterSeat seat in cart.seats)
+				{
+					if (seat.occupyingHuman != null && !seat.occupyingHuman.IsDead())
+					{
+						humansSeated = true;
+						break;
+					}
+				}
+				if (humansSeated) break;
+			}
+
+			// Only proceed if humans are seated
+			if (!humansSeated)
+			{
+				Debug.Log("No humans seated in coaster, restarting game loop...");
+				yield return new WaitForSeconds(restartDelay);
+				continue; // Skip to next iteration of the loop
+			}
+
+			// NEW PHASE: Zombie boarding
+			currentState = GameState.ZombieBoarding;
+			zombieSeated = false; // Reset zombie seated flag
+
+			// Wait for zombie to get seated or timeout
+			float waitTime = 0;
+			while (!zombieSeated && waitTime < zombieWaitTime)
+			{
+				waitTime += Time.deltaTime;
+				yield return null;
+			}
+
+			// If zombie didn't take seat within timeout, we'll proceed anyway
+			if (!zombieSeated)
+			{
+				Debug.LogWarning("Zombie didn't take seat within timeout period!");
+			}
 
 			// PHASE 3: Ride in progress
 			currentState = GameState.RideInProgress;
@@ -121,12 +334,94 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 	}
 
+	private IEnumerator MakeHumansRunAway()
+	{
+		Debug.Log("Humans are running away from the visible zombie!");
+
+		// Track how many humans we're making run away
+		int runningAwayCount = spawnedHumans.Count;
+		Debug.Log($"Making {runningAwayCount} humans run away");
+
+		// Make all humans run away
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				HumanScreamingState screamingState = human.GetComponent<HumanScreamingState>();
+				if (screamingState != null)
+				{
+					screamingState.ScreamAndRunAway(zombie.transform.position);
+				}
+				else
+				{
+					// Fallback if no screaming state component
+					HumanMovementController movement = human.GetComponent<HumanMovementController>();
+					if (movement != null)
+					{
+						// Calculate random flee direction
+						Vector2 randomDir = Random.insideUnitCircle.normalized;
+						Vector3 fleeTarget = human.transform.position + new Vector3(randomDir.x, randomDir.y, 0) * 10f;
+						movement.SetDestination(fleeTarget);
+					}
+				}
+			}
+		}
+
+		// Wait a moment for the screaming animation
+		yield return new WaitForSeconds(5.0f);
+
+		// Remove all humans - both from our list and any others in the scene
+		ClearSpawnedHumans();
+
+		// Double-check that no humans remain
+		HumanStateController[] remainingHumans = FindObjectsOfType<HumanStateController>();
+		if (remainingHumans.Length > 0)
+		{
+			Debug.LogWarning($"Found {remainingHumans.Length} humans remaining after clearance. Destroying them.");
+			foreach (HumanStateController human in remainingHumans)
+			{
+				if (human != null && human.gameObject != null)
+				{
+					Destroy(human.gameObject);
+				}
+			}
+		}
+	}
+
+	// Method to restart game loop after a delay
+	private IEnumerator RestartGameLoopAfterDelay(float delay)
+	{
+		yield return new WaitForSeconds(delay);
+
+		// Restart the game loop
+		if (gameLoopCoroutine != null)
+		{
+			StopCoroutine(gameLoopCoroutine);
+		}
+		gameLoopCoroutine = StartCoroutine(GameLoop());
+	}
+
 	private IEnumerator SpawnAndGatherHumans()
 	{
 		Debug.Log("Phase 1: Spawning and gathering humans");
 
 		// Clear any remaining humans from previous rounds
 		ClearSpawnedHumans();
+
+		// Destroy any stray humans that might still be in the scene but not in our list
+		foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+		{
+			if (human != null && human.gameObject != null)
+			{
+				Destroy(human.gameObject);
+			}
+		}
+
+		// Wait a frame to ensure cleanup is complete
+		yield return null;
+
+		// Spawn exactly the number of humans specified
+		spawnedHumans = new List<GameObject>(humansPerRound); // Initialize with capacity
 
 		// Spawn humans at gathering point
 		for (int i = 0; i < humansPerRound; i++)
@@ -151,14 +446,55 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 		// Allow some time for humans to gather
 		yield return new WaitForSeconds(1.5f);
+
+		// Double check our human count matches what we expect
+		if (spawnedHumans.Count > humansPerRound)
+		{
+			Debug.LogWarning($"Too many humans spawned! Expected {humansPerRound}, got {spawnedHumans.Count}. Cleaning up excess.");
+			while (spawnedHumans.Count > humansPerRound)
+			{
+				int lastIndex = spawnedHumans.Count - 1;
+				if (spawnedHumans[lastIndex] != null)
+				{
+					Destroy(spawnedHumans[lastIndex]);
+				}
+				spawnedHumans.RemoveAt(lastIndex);
+			}
+		}
 	}
 
 	private IEnumerator BoardHumansOnCoaster()
 	{
 		Debug.Log("Phase 2: Boarding humans on coaster");
 
+		// CRUCIAL CHECK: Verify zombie is hidden before attempting to board humans
+		if (zombieHidingSystem == null || !zombieHidingSystem.IsHidden)
+		{
+			Debug.LogWarning("Zombie is not hidden! Humans won't board.");
+			yield return StartCoroutine(MakeHumansRunAway());
+			yield break;
+		}
+
+		// Double-check we have the correct number of humans
+		int humanCount = spawnedHumans.Count;
+		int actualHumanCount = FindObjectsOfType<HumanStateController>().Length;
+		if (humanCount != actualHumanCount)
+		{
+			Debug.LogWarning($"Human count mismatch! Tracked: {humanCount}, Actual: {actualHumanCount}. Cleaning up before boarding.");
+			ClearSpawnedHumans();
+			yield return StartCoroutine(SpawnAndGatherHumans());
+		}
+
 		// Short delay before boarding
 		yield return new WaitForSeconds(boardingDelay);
+
+		// Continuous check for zombie hiding status during boarding prep
+		if (!zombieHidingSystem.IsHidden)
+		{
+			Debug.LogWarning("Zombie became visible during boarding prep! Humans won't board.");
+			yield return StartCoroutine(MakeHumansRunAway());
+			yield break;
+		}
 
 		// List to track which seats are filled
 		List<RollerCoasterSeat> availableSeats = new List<RollerCoasterSeat>();
@@ -178,14 +514,62 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 		// Assign humans to seats
 		int seatsToFill = Mathf.Min(availableSeats.Count, spawnedHumans.Count);
+		List<GameObject> unboardedHumans = new List<GameObject>(); // Track humans who won't be boarding
 
+		// First pass: identify which humans will board and which won't
+		for (int i = 0; i < spawnedHumans.Count; i++)
+		{
+			if (i >= seatsToFill || i >= availableSeats.Count)
+			{
+				// This human won't be boarding
+				if (spawnedHumans[i] != null)
+				{
+					unboardedHumans.Add(spawnedHumans[i]);
+				}
+			}
+		}
+
+		// Destroy unboarded humans right away
+		foreach (GameObject human in unboardedHumans)
+		{
+			Debug.Log($"Removing unboarded human {human.name} as there are not enough seats");
+			spawnedHumans.Remove(human);
+			Destroy(human);
+		}
+
+		// Now actually board the humans that have seats
 		for (int i = 0; i < seatsToFill; i++)
 		{
+			if (i >= spawnedHumans.Count)
+			{
+				Debug.LogWarning($"Not enough humans to fill seats. Seats: {seatsToFill}, Humans: {spawnedHumans.Count}");
+				break;
+			}
+
 			GameObject human = spawnedHumans[i];
 			RollerCoasterSeat seat = availableSeats[i];
 
+			if (human == null)
+			{
+				Debug.LogError($"Human at index {i} is null");
+				continue;
+			}
+
+			if (seat == null)
+			{
+				Debug.LogError($"Seat at index {i} is null");
+				continue;
+			}
+
+			// Check if zombie is still hidden before assigning each human
+			if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
+			{
+				Debug.LogWarning("Zombie became unhidden during boarding! Stopping boarding process.");
+				yield return StartCoroutine(MakeHumansRunAway());
+				yield break;
+			}
+
 			// Get the HumanSeatOccupant component
-			// In RollerCoasterGameManager.cs
 			HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
 			if (occupant != null)
 			{
@@ -208,11 +592,24 @@ public class RollerCoasterGameManager : MonoBehaviour
 		// Allow time for all humans to reach their seats
 		yield return new WaitForSeconds(boardingDuration);
 
+		// Double-check zombie is still hidden
+		if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
+		{
+			Debug.LogWarning("Zombie became unhidden just as humans were about to be seated!");
+			yield return StartCoroutine(MakeHumansRunAway());
+			yield break;
+		}
+
 		// Ensure all humans are seated properly and register with their seats
-		for (int i = 0; i < seatsToFill; i++)
+		for (int i = 0; i < seatsToFill && i < spawnedHumans.Count; i++)
 		{
 			GameObject human = spawnedHumans[i];
 			RollerCoasterSeat seat = availableSeats[i];
+
+			if (human == null || seat == null)
+			{
+				continue;
+			}
 
 			// Make sure they're at the seat position
 			human.transform.position = seat.transform.position;
@@ -241,7 +638,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	private IEnumerator CompleteRide()
 	{
-		Debug.Log("Ride complete - zombie in front cart and all humans dead");
+		Debug.Log("Ride complete - all humans are dead");
 
 		// Stop the coaster
 		railScroller.scrollSpeed = 0;
@@ -255,6 +652,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	private void CheckZombiePosition()
 	{
+		// This method is kept for backward compatibility but no longer needed for game completion
 		if (zombie == null || coasterCarts.Count == 0)
 			return;
 
@@ -287,7 +685,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 		if (humans.Length == 0)
 		{
 			allHumansDead = true;
-			Debug.Log("All humans are dead!");
+			Debug.Log("All humans are dead! Completing the ride...");
 			return;
 		}
 
@@ -304,7 +702,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 		if (allHumansDead)
 		{
-			Debug.Log("All humans are dead!");
+			Debug.Log("All humans are dead! Completing the ride...");
 		}
 	}
 
@@ -316,7 +714,10 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	private void ClearSpawnedHumans()
 	{
-		// Destroy any humans from previous rounds
+		// Log how many humans we're cleaning up
+		Debug.Log($"Clearing {spawnedHumans.Count} spawned humans and any strays in the scene");
+
+		// First destroy any humans in our tracked list
 		foreach (GameObject human in spawnedHumans)
 		{
 			if (human != null)
@@ -328,6 +729,16 @@ public class RollerCoasterGameManager : MonoBehaviour
 		// Clear the list
 		spawnedHumans.Clear();
 
+		// Now find and destroy ANY remaining humans in the scene that might not be in our list
+		foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+		{
+			if (human != null && human.gameObject != null)
+			{
+				Debug.Log($"Found stray human: {human.gameObject.name}. Destroying it.");
+				Destroy(human.gameObject);
+			}
+		}
+
 		// Also clear any seats that might still be marked as occupied
 		foreach (RollerCoasterCart cart in coasterCarts)
 		{
@@ -335,23 +746,12 @@ public class RollerCoasterGameManager : MonoBehaviour
 			{
 				foreach (RollerCoasterSeat seat in cart.seats)
 				{
-					if (seat != null && seat.occupyingHuman != null)
+					if (seat != null)
 					{
-						// Check if the occupying human is still in the scene
-						bool humanFound = false;
-
-						foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+						// Always clear the occupying human reference to avoid ghost references
+						if (seat.occupyingHuman != null)
 						{
-							if (human == seat.occupyingHuman)
-							{
-								humanFound = true;
-								break;
-							}
-						}
-
-						// If the human is no longer in the scene, clear the reference
-						if (!humanFound)
-						{
+							Debug.Log($"Clearing seat reference to human in cart {cart.name}");
 							seat.occupyingHuman = null;
 						}
 					}
@@ -397,9 +797,29 @@ public class RollerCoasterGameManager : MonoBehaviour
 		if (Application.isPlaying)
 		{
 			UnityEditor.Handles.color = Color.white;
+			string stateInfo = $"Game State: {currentState}";
+
+			// Add zombie status to the display
+			if (zombieHidingSystem != null)
+			{
+				stateInfo += $" - Zombie: {(zombieHidingSystem.IsHidden ? "Hidden" : "Visible")}";
+			}
+
+			// Add more specific state info
+			if (currentState == GameState.ZombieBoarding)
+			{
+				stateInfo += zombieSeated ? " (Zombie Seated)" : " (Waiting for Zombie)";
+			}
+			else if (currentState == GameState.WaitingForZombieToHide)
+			{
+				stateInfo += " (Player needs to hide zombie)";
+			}
+
+			stateInfo += $" - Rail Speed: {railScroller.scrollSpeed:F1}";
+
 			UnityEditor.Handles.Label(
 				Camera.main.ViewportToWorldPoint(new Vector3(0.5f, 0.95f, 10f)),
-				$"Game State: {currentState}"
+				stateInfo
 			);
 		}
 	}
