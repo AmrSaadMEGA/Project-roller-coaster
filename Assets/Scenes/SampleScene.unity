@@ -1353,6 +1353,7 @@ GameObject:
   - component: {fileID: 694429983}
   - component: {fileID: 694429982}
   - component: {fileID: 694429984}
+  - component: {fileID: 694429985}
   m_Layer: 0
   m_Name: Zombie
   m_TagString: Untagged
@@ -1420,8 +1421,29 @@ MonoBehaviour:
   hideSpotClickRadius: 1.5
   unhideDelay: 0.5
   unhideAnimationState: Unhiding
+  respawnDelay: 3
   gameManager: {fileID: 2010259929}
   railScroller: {fileID: 0}
+--- !u!114 &694429985
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694429981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 569415b66610fcc4c8271f213894c556, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  zombieHidingSystem: {fileID: 694429984}
+  hideSpotMovementSystem: {fileID: 1985525571}
+  gameManager: {fileID: 2010259929}
+  scrollerManager: {fileID: 1435480603}
+  hideSpot: {fileID: 1985525570}
+  defaultHidePosition: {x: 0, y: 0, z: 0}
+  entryDelayTime: 2
+  exitDelayTime: 1.5
 --- !u!1 &701748076
 GameObject:
   m_ObjectHideFlags: 0
@@ -2974,6 +2996,54 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   occupyingHuman: {fileID: 0}
+--- !u!1 &1435480602
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1435480604}
+  - component: {fileID: 1435480603}
+  m_Layer: 0
+  m_Name: 'ScrollerManager '
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1435480603
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1435480602}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cc7bedbecf9a1041b9bb7c752451870, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  railScroller: {fileID: 361237968}
+  backgroundScroller: {fileID: 1903218633}
+  transitionDuration: 1.5
+  easingPower: 2
+--- !u!4 &1435480604
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1435480602}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.7471585, y: 1.7501584, z: -0.05811917}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1552518812
 GameObject:
   m_ObjectHideFlags: 0
@@ -3960,6 +4030,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1985525570}
   - component: {fileID: 1985525568}
+  - component: {fileID: 1985525571}
   m_Layer: 0
   m_Name: Hiding spot
   m_TagString: Untagged
@@ -4030,6 +4101,49 @@ Transform:
   - {fileID: 1974046867}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1985525571
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1985525567}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 031b5d5627c05d344ae17d972274dd68, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  hideSpot: {fileID: 1985525570}
+  scrollerManager: {fileID: 1435480603}
+  gameManager: {fileID: 2010259929}
+  offscreenRightPosition: {x: 18, y: 4.8, z: 0}
+  centerScreenPosition: {x: 0.25, y: 4.8, z: 0}
+  offscreenLeftPosition: {x: -18.2, y: 4.83, z: 0}
+  movementDuration: 3
+  movementEasingCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &2010259928
 GameObject:
   m_ObjectHideFlags: 0
@@ -4060,10 +4174,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   currentState: 0
+  scrollerManager: {fileID: 1435480603}
   railScroller: {fileID: 361237968}
   humanGatheringPoint: {fileID: 933164635}
   zombie: {fileID: 694429982}
   zombieHidingSystem: {fileID: 0}
+  zombieHidingManager: {fileID: 0}
   humanPrefab: {fileID: 7523194555809352182, guid: aeda8506f60572f4b888e247016a18a2, type: 3}
   humansPerRound: 4
   humanSpawnInterval: 0.5
@@ -4077,6 +4193,7 @@ MonoBehaviour:
   rideSpeed: 5
   restartDelay: 3
   zombieWaitTime: 2
+  waitForZombieHidingTime: 5
 --- !u!4 &2010259930
 Transform:
   m_ObjectHideFlags: 0
@@ -4199,3 +4316,4 @@ SceneRoots:
   - {fileID: 2010259930}
   - {fileID: 933164635}
   - {fileID: 1985525570}
+  - {fileID: 1435480604}

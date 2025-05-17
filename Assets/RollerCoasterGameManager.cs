@@ -8,10 +8,12 @@ public class RollerCoasterGameManager : MonoBehaviour
 	[SerializeField] private GameState currentState = GameState.HumansGathering;
 
 	[Header("References")]
+	[SerializeField] private ScrollerManager scrollerManager; // Added ScrollerManager reference
 	[SerializeField] private InfiniteRailScroller railScroller;
 	[SerializeField] private Transform humanGatheringPoint;
 	[SerializeField] private ZombieController zombie;
-	[SerializeField] private ZombieHidingSystem zombieHidingSystem; // Added reference to ZombieHidingSystem
+	[SerializeField] private ZombieHidingSystem zombieHidingSystem;
+	[SerializeField] private ZombieHidingManager zombieHidingManager; // Add this line
 
 	[Header("Humans")]
 	[SerializeField] private GameObject humanPrefab;
@@ -25,24 +27,24 @@ public class RollerCoasterGameManager : MonoBehaviour
 	[SerializeField] private float boardingDuration = 2f;
 	[SerializeField] private float rideSpeed = 5f;
 	[SerializeField] private float restartDelay = 3f;
-	[SerializeField] private float zombieWaitTime = 2f; // Added wait time for zombie to take seat
-	[SerializeField] private float waitForZombieHidingTime = 5f; // Time to wait for player to hide zombie
+	[SerializeField] private float zombieWaitTime = 2f;
+	[SerializeField] private float waitForZombieHidingTime = 5f;
 
 	// Private variables
 	private List<GameObject> spawnedHumans = new List<GameObject>();
-	private bool zombieInFrontCart = false; // Keeping this for backward compatibility
+	private bool zombieInFrontCart = false;
 	private bool allHumansDead = false;
 	private float originalScrollSpeed;
-	private bool zombieSeated = false; // New flag to track if zombie is seated
-	private Coroutine gameLoopCoroutine; // Store reference to allow stopping
+	private bool zombieSeated = false;
+	private Coroutine gameLoopCoroutine;
 
 	// Game states
 	public enum GameState
 	{
 		HumansGathering,
-		WaitingForZombieToHide, // New state for waiting for player to hide zombie
+		WaitingForZombieToHide,
 		HumansBoardingTrain,
-		ZombieBoarding, // New state for zombie boarding
+		ZombieBoarding,
 		RideInProgress,
 		RideComplete,
 		RideRestarting
@@ -71,6 +73,14 @@ public class RollerCoasterGameManager : MonoBehaviour
 			return;
 		}
 
+		// Check for ScrollerManager
+		if (scrollerManager == null)
+		{
+			Debug.LogError("RollerCoasterGameManager needs a reference to the ScrollerManager!");
+			enabled = false;
+			return;
+		}
+
 		// Find ZombieHidingSystem if not assigned
 		if (zombieHidingSystem == null)
 		{
@@ -80,6 +90,14 @@ public class RollerCoasterGameManager : MonoBehaviour
 				Debug.LogError("RollerCoasterGameManager needs a reference to the ZombieHidingSystem!");
 				enabled = false;
 				return;
+			}
+		}
+		if (zombieHidingManager == null)
+		{
+			zombieHidingManager = FindObjectOfType<ZombieHidingManager>();
+			if (zombieHidingManager == null)
+			{
+				Debug.LogWarning("RollerCoasterGameManager couldn't find ZombieHidingManager - hide spot movement won't be synchronized");
 			}
 		}
 
@@ -93,13 +111,13 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 
 		// Store original scroll speed
-		originalScrollSpeed = railScroller.scrollSpeed;
+		originalScrollSpeed = rideSpeed;
 	}
 
 	private void Start()
 	{
-		// Start with the coaster not moving
-		railScroller.scrollSpeed = 0f;
+		// Make sure scrollers start stopped
+		scrollerManager.StopScrolling();
 
 		// Sort carts from front to back (highest to lowest X position)
 		SortCartsByPosition();
@@ -276,9 +294,14 @@ public class RollerCoasterGameManager : MonoBehaviour
 				yield return new WaitForSeconds(restartDelay);
 				continue; // Skip to next iteration of the loop
 			}
-
+			// Add explicit position reset before boarding
 			currentState = GameState.HumansBoardingTrain;
+			if (zombieHidingManager != null)
+			{
+				zombieHidingManager.ForceHideSpotToCenter();
+			}
 			yield return StartCoroutine(BoardHumansOnCoaster());
+
 
 			// Check if any humans are seated
 			bool humansSeated = false;
@@ -628,8 +651,8 @@ public class RollerCoasterGameManager : MonoBehaviour
 	{
 		Debug.Log("Phase 3: Starting the ride");
 
-		// Start the roller coaster moving
-		railScroller.scrollSpeed = rideSpeed;
+		// Start the roller coaster moving with smooth acceleration
+		scrollerManager.StartScrolling(rideSpeed);
 
 		// Reset ride completion flags
 		zombieInFrontCart = false;
@@ -641,9 +664,15 @@ public class RollerCoasterGameManager : MonoBehaviour
 		Debug.Log("Ride complete - all humans are dead");
 
 		// Stop the coaster
-		railScroller.scrollSpeed = 0;
+		scrollerManager.StopScrolling();
 
-		// Wait a moment to acknowledge completion
+		// Force hide spot to center with right-to-center movement
+		if (zombieHidingManager != null)
+		{
+			zombieHidingManager.ForceHideSpotToCenter();
+		}
+
+		// Wait a moment
 		yield return new WaitForSeconds(2f);
 
 		// Move to restarting phase
@@ -759,8 +788,26 @@ public class RollerCoasterGameManager : MonoBehaviour
 			}
 		}
 	}
+	public void RestartGame()
+	{
+		// Ensure hide spot moves off screen before next round
+		if (zombieHidingManager != null)
+		{
+			zombieHidingManager.ForceHideSpotOffscreen();
+		}
 
+		// Set state to restarting
+		currentState = GameState.RideRestarting;
+
+		// Restart the game loop
+		if (gameLoopCoroutine != null)
+		{
+			StopCoroutine(gameLoopCoroutine);
+		}
+		gameLoopCoroutine = StartCoroutine(GameLoop());
+	}
 	// For visualization in the editor
+#if UNITY_EDITOR
 	private void OnDrawGizmos()
 	{
 		if (humanGatheringPoint != null)
@@ -815,7 +862,15 @@ public class RollerCoasterGameManager : MonoBehaviour
 				stateInfo += " (Player needs to hide zombie)";
 			}
 
-			stateInfo += $" - Rail Speed: {railScroller.scrollSpeed:F1}";
+			// Show scrolling status
+			if (scrollerManager != null)
+			{
+				stateInfo += $" - Scrolling: {(scrollerManager.IsStopped() ? "Stopped" : "Moving")}";
+				if (scrollerManager.IsTransitioning())
+				{
+					stateInfo += " (Transitioning)";
+				}
+			}
 
 			UnityEditor.Handles.Label(
 				Camera.main.ViewportToWorldPoint(new Vector3(0.5f, 0.95f, 10f)),
@@ -823,4 +878,5 @@ public class RollerCoasterGameManager : MonoBehaviour
 			);
 		}
 	}
+#endif
 }
