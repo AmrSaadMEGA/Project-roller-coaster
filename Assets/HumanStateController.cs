@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using static RollerCoasterGameManager;
 
 public class HumanStateController : MonoBehaviour
 {
@@ -18,6 +19,8 @@ public class HumanStateController : MonoBehaviour
 
 	[Header("Debug")]
 	[SerializeField] private bool showStateGizmo = true;
+
+	private ZombieController zombie;
 
 	private float vulnerableDuration;
 	private float defensiveDuration;
@@ -55,6 +58,7 @@ public class HumanStateController : MonoBehaviour
 		{
 			gameObject.AddComponent<DeadHumanThrower>();
 		}
+		zombie = FindObjectOfType<ZombieController>(); // Single FindObjectOfType call
 	}
 
 	void Update()
@@ -81,18 +85,40 @@ public class HumanStateController : MonoBehaviour
 			}
 		}
 	}
+	public bool IsOnRide()
+	{
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		var gameManager = FindObjectOfType<RollerCoasterGameManager>();
 
+		return occupant != null && occupant.IsSeated &&
+			   gameManager != null &&
+			   (gameManager.CurrentState == GameState.HumansBoardingTrain ||
+				gameManager.CurrentState == GameState.HumansGathering); // Explicitly check states
+	}
 	/// <summary>
 	/// Call this to kill the human: plays the death animation and stops further state changes.
 	/// </summary>
-	public void Die()
+	public void TriggerPanicInRadius(float radius)
+	{
+		Collider2D[] nearbyHumans = Physics2D.OverlapCircleAll(transform.position, radius);
+		foreach (Collider2D col in nearbyHumans)
+		{
+			HumanScreamingState screamingHuman = col.GetComponent<HumanScreamingState>();
+			if (screamingHuman != null && !screamingHuman.IsSeated() && zombie != null)
+			{
+				screamingHuman.ScreamAndRunAway(zombie.transform.position);
+			}
+		}
+	}
+	public void Die(bool causedByZombie = false)
 	{
 		if (currentState == State.Dead) return;
+
 		currentState = State.Dead;
 		if (animator != null)
 			animator.Play(deathStateName);
 
-		Debug.Log($"Human {gameObject.name} has died!");
+		// REMOVED: TriggerPanicInRadius call
 	}
 
 	// Draw gizmos to visualize state - works in both 2D and 3D

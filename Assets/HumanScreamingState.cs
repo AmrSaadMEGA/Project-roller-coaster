@@ -18,6 +18,12 @@ public class HumanScreamingState : MonoBehaviour
 	private float originalMoveSpeed;
 	private bool isScreaming = false;
 
+	public bool IsSeated()
+	{
+		// Correct seated check logic
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		return occupant != null && occupant.IsSeated;
+	}
 	private void Awake()
 	{
 		animator = GetComponent<Animator>();
@@ -38,9 +44,9 @@ public class HumanScreamingState : MonoBehaviour
 	/// Makes the human scream and run away in a panic
 	/// </summary>
 	/// <param name="scareSource">The position of what scared the human</param>
-	public void ScreamAndRunAway(Vector3 scareSource)
+	public void ScreamAndRunAway(Vector3 scareSource, bool forceReact = false)
 	{
-		if (isScreaming || stateController.IsDead())
+		if ((isScreaming && !forceReact) || stateController.IsDead() || stateController.IsOnRide())
 			return;
 
 		StopAllCoroutines();

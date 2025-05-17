@@ -363,48 +363,58 @@ public class ZombieController : MonoBehaviour
 			if (humanCart == null)
 				continue; // Skip if no cart
 
-			// IMPORTANT: Let's NOT use IsCartInFront since we don't know the exact layout
-			// Just enable attacking ANY human in a DIFFERENT cart
+			// Skip if the human is in the same cart as the zombie
 			if (humanCart == currentCart)
 			{
 				if (debugMode)
 					Debug.Log($"Human {human.name} is in the same cart as the zombie.");
-				continue; // Skip if in the same cart as zombie
+				continue;
+			}
+
+			// Check if the human's cart is adjacent and in front of the current cart
+			bool isAdjacent = AreCartsAdjacent(currentCart, humanCart);
+			bool isInFront = IsCartInFront(currentCart, humanCart);
+
+			if (!isAdjacent || !isInFront)
+			{
+				if (debugMode)
+					Debug.Log($"Human {human.name} is in a non-adjacent or non-front cart. Adjacent: {isAdjacent}, In Front: {isInFront}");
+				continue;
 			}
 
 			// Get the seat index of the human
 			int humanSeatIndex = humanCart.GetSeatIndex(human.OccupiedSeat);
 
-			// CRITICAL CHECK: Only attack if the human is in the SAME seat position
-			if (humanSeatIndex == currentSeatIndex)
+			// Check if the human is in the same seat position as the zombie
+			if (humanSeatIndex != currentSeatIndex)
 			{
 				if (debugMode)
-					Debug.Log($"Found possible target: {human.name} in seat {humanSeatIndex}, distance to mouse: {distanceToMouse}");
+					Debug.Log($"Human {human.name} is in seat {humanSeatIndex}, which doesn't match zombie's seat {currentSeatIndex}.");
+				continue;
+			}
 
-				// Get the human state controller
-				HumanStateController humanController = human.GetComponent<HumanStateController>();
-				if (humanController != null && humanController.IsVulnerable())
-				{
-					// Keep track of the closest valid target
-					if (distanceToMouse < closestDistance)
-					{
-						closestDistance = distanceToMouse;
-						clickedHuman = human;
-						clickedController = humanController;
+			// Check if the human is vulnerable
+			HumanStateController humanController = human.GetComponent<HumanStateController>();
+			if (humanController == null || !humanController.IsVulnerable())
+			{
+				if (debugMode)
+					Debug.Log($"Human {human.name} is not vulnerable.");
+				continue;
+			}
 
-						if (debugMode)
-							Debug.Log($"VALID TARGET: {human.name} in same seat position (seat {humanSeatIndex}) as zombie (seat {currentSeatIndex})");
-					}
-				}
-				else
-				{
-					if (debugMode)
-						Debug.Log("Human found but not vulnerable");
-				}
+			// Track the closest valid target
+			if (distanceToMouse < closestDistance)
+			{
+				closestDistance = distanceToMouse;
+				clickedHuman = human;
+				clickedController = humanController;
+
+				if (debugMode)
+					Debug.Log($"VALID TARGET: {human.name} in adjacent front cart (seat {humanSeatIndex})");
 			}
 		}
 
-		// If we found a valid human to eat
+		// If a valid human is found, attack them
 		if (clickedHuman != null && clickedController != null)
 		{
 			if (debugMode)
@@ -421,7 +431,6 @@ public class ZombieController : MonoBehaviour
 
 		return false;
 	}
-
 	private IEnumerator SwitchSeat(int newSeatIndex)
 	{
 		isMovingBetweenSeats = true;
@@ -500,7 +509,7 @@ public class ZombieController : MonoBehaviour
 	{
 		if (targetHuman != null)
 		{
-			targetHuman.Die();
+			targetHuman.Die(true); // Pass true for zombie-caused death
 			targetHuman = null;
 		}
 	}

@@ -1,5 +1,7 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
+using static RollerCoasterGameManager;
+using System.Linq;
 
 [RequireComponent(typeof(ZombieController))]
 public class ZombieHidingSystem : MonoBehaviour
@@ -75,63 +77,77 @@ public class ZombieHidingSystem : MonoBehaviour
 
 	private IEnumerator AutoHideAtStart()
 	{
-		// Wait a moment for everything to initialize
-		yield return new WaitForSeconds(0.5f);
-
-		// Hide automatically at start
-		HideZombie();
-		autoHideDone = true;
+		// Hide instantly without delay
+		transform.position = hideSpot.position;
+		isHidden = true;
+		yield break; // Remove the wait
 	}
 
 	// Add a condition to Update to prevent unwanted game restarting
 	private void Update()
 	{
-		// Only process clicks when not already in transition and rail is not moving
-		if (!isHiding && !IsRailMoving())
+		// Modified condition to allow hiding during boarding phase
+		if (!isHiding && !IsRailMoving() &&
+		   gameManager.CurrentState != RollerCoasterGameManager.GameState.RideInProgress)
 		{
-			// Check player clicks on hide spot
 			if (Input.GetMouseButtonDown(0))
 			{
-				// Get mouse position in world space
 				Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-
-				// If the player clicked on the hide spot
 				if (Vector2.Distance(mousePosition, hideSpot.position) <= hideSpotClickRadius)
 				{
 					if (!isHidden)
 					{
-						// Hide the zombie
 						HideZombie();
 					}
 				}
 			}
 		}
+		// Prevent panic after successful boarding
+		if (gameManager.CurrentState == RollerCoasterGameManager.GameState.ZombieBoarding &&
+			!isHidden && !humansScared)
+		{
+			humansScared = true; // Block automatic scare system
+		}
 
 		// Check game state to determine when to unhide
-		if (isHidden && !isHiding && gameManager != null)
+		// Modified condition with additional seating check
+		if (isHidden && !isHiding && gameManager != null &&
+			   gameManager.CurrentState == GameState.ZombieBoarding &&
+			   gameManager.BoardingCompleted &&
+			   AllHumansProperlySeated())
 		{
-			// Modified: Only unhide during the specific ZombieBoarding state
-			if (gameManager.CurrentState == RollerCoasterGameManager.GameState.ZombieBoarding)
-			{
-				UnhideZombie();
-			}
+			UnhideZombie();
 		}
 
 		// Modified: Check if humans are boarding and zombie isn't hidden
-		// Only trigger human screaming if the game isn't in ride progress or restart
+		// Modified condition: Only trigger panic during HumanGathering or HumansBoardingTrain
 		if (!isHidden && !isHiding && gameManager != null && autoHideDone && !humansScared)
 		{
-			// If humans are gathering or boarding and zombie isn't hidden, make them run away
 			if (gameManager.CurrentState == RollerCoasterGameManager.GameState.HumansGathering ||
 				gameManager.CurrentState == RollerCoasterGameManager.GameState.HumansBoardingTrain)
 			{
-				// Trigger scream and run away (only if not already running)
 				TriggerHumanScreaming();
-				humansScared = true; // Set flag to true to prevent multiple scares in succession
+				humansScared = true;
 			}
 		}
 	}
+	// NEW HELPER METHOD
+	private bool AllHumansProperlySeated()
+	{
+		if (gameManager?.SpawnedHumans == null) return false;
 
+		foreach (GameObject human in gameManager.SpawnedHumans)
+		{
+			if (human == null) continue;
+			HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+			if (occupant == null || !occupant.IsSeated) return false;
+
+			// Additional verification with seat data
+			if (occupant.OccupiedSeat?.occupyingHuman != occupant.HumanController)
+				return false;
+		}
+		return true;
+	}
 	// New method to check if the rail is moving
 	private bool IsRailMoving()
 	{
@@ -159,7 +175,8 @@ public class ZombieHidingSystem : MonoBehaviour
 
 	public void UnhideZombie()
 	{
-		if (isHiding || !isHidden)
+		// Add extra validation
+		if (isHiding || !isHidden || !AllHumansProperlySeated())
 			return;
 
 		StartCoroutine(UnhideZombieCoroutine());
@@ -212,6 +229,10 @@ public class ZombieHidingSystem : MonoBehaviour
 	{
 		isHiding = true;
 
+		// Get reference to isMovingBetweenSeats field in ZombieController
+		System.Reflection.FieldInfo movingField = typeof(ZombieController)
+			.GetField("isMovingBetweenSeats", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
 		// Short delay before unhiding
 		yield return new WaitForSeconds(unhideDelay);
 
@@ -238,7 +259,11 @@ public class ZombieHidingSystem : MonoBehaviour
 		int seatIndex = -1;
 		for (int i = 0; i < backCart.seats.Length; i++)
 		{
-			if (!backCart.seats[i].isOccupied)
+			// ENHANCED OCCUPANCY CHECK
+			if (!backCart.seats[i].isOccupied &&
+				backCart.seats[i].occupyingHuman == null &&
+				Vector3.Distance(backCart.seats[i].transform.position,
+								transform.position) > 0.5f) // Safety margin
 			{
 				seatIndex = i;
 				break;
@@ -247,11 +272,20 @@ public class ZombieHidingSystem : MonoBehaviour
 
 		if (seatIndex == -1)
 		{
-			// If no empty seat, use the first seat 
-			// (or handle this differently as needed)
-			seatIndex = 0;
-			Debug.LogWarning("No empty seats in the back cart!");
+			for (int i = 0; i < backCart.seats.Length; i++)
+			{
+				if (backCart.seats[i].occupyingHuman == null)
+				{
+					seatIndex = i;
+					break;
+				}
+			}
 		}
+
+
+		// --- NEW CODE: Disable attacks during movement ---
+		// Set isMovingBetweenSeats to true to prevent attacks
+		movingField.SetValue(zombieController, true);
 
 		// Move to the seat position
 		Vector3 startPos = transform.position;
@@ -268,8 +302,10 @@ public class ZombieHidingSystem : MonoBehaviour
 		// Ensure final position is exact
 		transform.position = endPos;
 
+		// --- NEW CODE: Re-enable attacks after movement ---
+		movingField.SetValue(zombieController, false);
+
 		// Update the ZombieController's cart reference
-		// Access the currentCart field via reflection
 		System.Reflection.FieldInfo cartField = typeof(ZombieController)
 			.GetField("currentCart", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
@@ -278,7 +314,7 @@ public class ZombieHidingSystem : MonoBehaviour
 			cartField.SetValue(zombieController, backCart);
 		}
 
-		// Access the currentSeatIndex field via reflection
+		// Update seat index
 		System.Reflection.FieldInfo seatField = typeof(ZombieController)
 			.GetField("currentSeatIndex", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
@@ -295,16 +331,22 @@ public class ZombieHidingSystem : MonoBehaviour
 
 	private void TriggerHumanScreaming()
 	{
-		// Find all humans in the scene
-		HumanStateController[] humans = FindObjectsOfType<HumanStateController>();
+		// Only trigger panic during gathering/boarding phases
+		if (gameManager.CurrentState != GameState.HumansGathering &&
+			gameManager.CurrentState != GameState.HumansBoardingTrain)
+		{
+			return;
+		}
+
+		HumanStateController[] humans = FindObjectsOfType<HumanStateController>()
+			.Where(h => !h.IsDead() && h.GetComponent<HumanSeatOccupant>()?.IsSeated == false)
+			.ToArray();
 
 		foreach (HumanStateController human in humans)
 		{
-			// Make humans scream and run away
 			StartCoroutine(MakeHumanScreamAndRun(human));
 		}
 
-		// Schedule respawning of humans after they're all removed
 		StartCoroutine(RespawnHumansAfterDelay());
 	}
 
@@ -362,44 +404,26 @@ public class ZombieHidingSystem : MonoBehaviour
 	// New method to handle respawning humans after all are scared away
 	private IEnumerator RespawnHumansAfterDelay()
 	{
-		// Wait for all humans to be removed and for the respawn delay
 		yield return new WaitForSeconds(5.0f + respawnDelay);
 
-		// Check if zombie is still visible (not hidden)
-		if (!isHidden)
+		// Only respawn if in gathering/boarding states
+		if (!isHidden &&
+			(gameManager.CurrentState == GameState.HumansGathering ||
+			 gameManager.CurrentState == GameState.HumansBoardingTrain))
 		{
-			// Use GameManager to restart the human spawning process
-			// We'll force the game state back to HumansGathering
-			if (gameManager != null)
+			// Clear ONLY non-seated humans
+			foreach (GameObject human in gameManager.SpawnedHumans.ToList())
 			{
-				// Use reflection to access and invoke a private method in the game manager
-				// This is a bit of a hack but works without modifying the GameManager class
-				System.Reflection.MethodInfo clearMethod = typeof(RollerCoasterGameManager)
-					.GetMethod("ClearSpawnedHumans", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-				if (clearMethod != null)
+				HumanSeatOccupant occupant = human?.GetComponent<HumanSeatOccupant>();
+				if (occupant == null || !occupant.IsSeated)
 				{
-					clearMethod.Invoke(gameManager, null);
-				}
-
-				// Reset the scared flag to allow scaring the new humans
-				humansScared = false;
-
-				// Use reflection to restart the game loop coroutine
-				// This approach assumes the game manager has a "GameLoop" coroutine
-				// that we can restart to initiate a new round of humans spawning
-				System.Reflection.FieldInfo currentStateField = typeof(RollerCoasterGameManager)
-					.GetField("currentState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-				if (currentStateField != null)
-				{
-					// Force the game state back to HumansGathering
-					currentStateField.SetValue(gameManager, RollerCoasterGameManager.GameState.HumansGathering);
-
-					// Start a coroutine that will call SpawnAndGatherHumans in the game manager
-					StartCoroutine(CallSpawnAndGatherHumans());
+					gameManager.SpawnedHumans.Remove(human);
+					Destroy(human);
 				}
 			}
+
+			// Restart spawning without resetting the entire game state
+			StartCoroutine(CallSpawnAndGatherHumans());
 		}
 	}
 

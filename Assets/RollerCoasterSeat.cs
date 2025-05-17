@@ -4,9 +4,15 @@ public class RollerCoasterSeat : MonoBehaviour
 {
 	[Tooltip("Reference to the human sitting in this seat (null if empty)")]
 	public HumanStateController occupyingHuman;
+	public int SeatIndex { get; private set; } // Add this property
 
 	[Tooltip("Whether this seat can be occupied")]
 	public bool isOccupied => occupyingHuman != null;
+	// Initialize seat index (call this from cart)
+	public void SetSeatIndex(int index)
+	{
+		SeatIndex = index;
+	}
 
 	private void Awake()
 	{

@@ -12,6 +12,13 @@ public class RollerCoasterCart : MonoBehaviour
 	/// <param name="currentSeatIndex">Index of the current seat</param>
 	/// <param name="adjacentSeatIndex">Out parameter that will contain the adjacent seat index if found</param>
 	/// <returns>True if an adjacent empty seat is found, false otherwise</returns>
+	private void Awake()
+	{
+		for (int i = 0; i < seats.Length; i++)
+		{
+			seats[i].SetSeatIndex(i);
+		}
+	}
 	public bool TryGetAdjacentSeat(int currentSeatIndex, out int adjacentSeatIndex)
 	{
 		adjacentSeatIndex = -1;

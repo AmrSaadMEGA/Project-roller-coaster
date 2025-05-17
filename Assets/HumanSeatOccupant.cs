@@ -13,6 +13,10 @@ public class HumanSeatOccupant : MonoBehaviour
 
 	// Make the occupied seat accessible
 	public RollerCoasterSeat OccupiedSeat => occupiedSeat;
+	public HumanStateController HumanController => humanController;
+
+	// Add this property to HumanSeatOccupant.cs
+	public bool IsSeated => isSeated;
 
 	void Awake()
 	{
@@ -44,14 +48,15 @@ public class HumanSeatOccupant : MonoBehaviour
 
 	void Update()
 	{
-		// If we have a movement controller and assigned seat but not yet seated
 		if (!isSeated && movementController != null && occupiedSeat != null)
 		{
-			// Check if we've reached the seat position
 			if (movementController.HasReachedDestination() && !movementController.IsMoving())
 			{
-				// We've arrived at the seat, occupy it
-				OccupySeat(occupiedSeat);
+				// Ensure seat is marked occupied atomically
+				if (occupiedSeat.occupyingHuman == null || occupiedSeat.occupyingHuman == humanController)
+				{
+					OccupySeat(occupiedSeat);
+				}
 			}
 		}
 	}
@@ -62,21 +67,23 @@ public class HumanSeatOccupant : MonoBehaviour
 	/// <param name="seat">The seat to occupy</param>
 	public void AssignSeat(RollerCoasterSeat seat)
 	{
-		// Unregister from current seat if any
+		// Unregister from current seat
 		if (occupiedSeat != null && occupiedSeat.occupyingHuman == humanController)
 		{
 			occupiedSeat.occupyingHuman = null;
 		}
 
-		// Set new seat
+		// Set new seat but DON'T mark as occupied yet
 		occupiedSeat = seat;
 		isSeated = false;
 
-		// Start moving to the seat
+		// Start moving to seat
 		if (movementController != null && seat != null)
 		{
 			movementController.SetDestination(seat.transform.position);
 		}
+		// TEMPORARY CLAIM - prevents others from taking this seat
+		seat.occupyingHuman = humanController; // But will be cleared if movement fails
 	}
 
 	/// <summary>

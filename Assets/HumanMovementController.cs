@@ -1,5 +1,6 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
+using static RollerCoasterGameManager;
 
 [RequireComponent(typeof(HumanStateController))]
 public class HumanMovementController : MonoBehaviour
@@ -23,11 +24,22 @@ public class HumanMovementController : MonoBehaviour
 	private Animator animator;
 	private float pathUpdateTimer;
 
+	// Add to HumanMovementController class
+	[Header("Zombie Awareness")]
+	[SerializeField] private float zombieDetectionRange = 5f;
+
+	private ZombieController zombie;
+	private HumanScreamingState humanScreamState;
+
 	private void Awake()
 	{
 		stateController = GetComponent<HumanStateController>();
 		animator = GetComponent<Animator>();
 		targetPosition = transform.position;
+
+		// Add to existing Awake
+		zombie = FindObjectOfType<ZombieController>();
+		humanScreamState = GetComponent<HumanScreamingState>();
 	}
 
 	private void Start()
@@ -37,6 +49,12 @@ public class HumanMovementController : MonoBehaviour
 
 	private void Update()
 	{
+		// Add to beginning of Update
+		if (ShouldReactToZombie())
+		{
+			ReactToZombiePresence();
+			return;
+		}
 		// Don't move if dead
 		if (stateController != null && stateController.IsDead())
 		{
@@ -50,7 +68,22 @@ public class HumanMovementController : MonoBehaviour
 			MoveTowardsTarget();
 		}
 	}
-
+	private bool ShouldReactToZombie()
+	{
+		RollerCoasterGameManager gameManager = FindObjectOfType<RollerCoasterGameManager>();
+		return !stateController.IsDead() &&
+			   gameManager.CurrentState != GameState.ZombieBoarding &&
+			   gameManager.CurrentState != GameState.RideInProgress &&
+			   gameManager.CurrentState != GameState.HumansBoardingTrain && // Add this line
+			   zombie != null &&
+			   !zombie.GetComponent<ZombieHidingSystem>().IsHidden &&
+			   Vector3.Distance(transform.position, zombie.transform.position) < zombieDetectionRange;
+	}
+	private void ReactToZombiePresence()
+	{
+		StopMoving();
+		humanScreamState.ScreamAndRunAway(zombie.transform.position);
+	}
 	/// <summary>
 	/// Sets a new destination for the human to move towards.
 	/// </summary>

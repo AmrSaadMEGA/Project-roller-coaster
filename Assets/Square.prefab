@@ -231,6 +231,7 @@ MonoBehaviour:
   walkAnimationState: Walking
   idleAnimationState: Idle
   showPath: 1
+  zombieDetectionRange: 5
 --- !u!114 &3794616300549865955
 MonoBehaviour:
   m_ObjectHideFlags: 0
