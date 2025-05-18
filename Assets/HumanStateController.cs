@@ -92,8 +92,8 @@ public class HumanStateController : MonoBehaviour
 
 		return occupant != null && occupant.IsSeated &&
 			   gameManager != null &&
-			   (gameManager.CurrentState == GameState.HumansBoardingTrain ||
-				gameManager.CurrentState == GameState.HumansGathering); // Explicitly check states
+			   (gameManager.CurrentState == GameState.RideInProgress ||
+				gameManager.CurrentState == GameState.HumansBoardingTrain);
 	}
 	/// <summary>
 	/// Call this to kill the human: plays the death animation and stops further state changes.
@@ -104,7 +104,7 @@ public class HumanStateController : MonoBehaviour
 		foreach (Collider2D col in nearbyHumans)
 		{
 			HumanScreamingState screamingHuman = col.GetComponent<HumanScreamingState>();
-			if (screamingHuman != null && !screamingHuman.IsSeated() && zombie != null)
+			if (screamingHuman != null && !screamingHuman.IsSeated() && zombie != null && zombie.GetComponent<ZombieHidingSystem>().IsHidden == false)
 			{
 				screamingHuman.ScreamAndRunAway(zombie.transform.position);
 			}

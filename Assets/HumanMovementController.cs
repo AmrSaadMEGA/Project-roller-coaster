@@ -49,8 +49,21 @@ public class HumanMovementController : MonoBehaviour
 
 	private void Update()
 	{
+		// First priority: Check for zombie occupation in target seat
+		if (isMoving && IsTargetSeatOccupiedByZombie())
+		{
+			Debug.Log($"Human {gameObject.name} detected zombie in target seat! Fleeing!");
+			ReactToZombiePresence();
+			return;
+		}
 		// Add to beginning of Update
 		if (ShouldReactToZombie())
+		{
+			ReactToZombiePresence();
+			return;
+		}
+		// Add this check at the start of Update()
+		if (isMoving && ShouldReactToZombie())
 		{
 			ReactToZombiePresence();
 			return;
@@ -68,21 +81,69 @@ public class HumanMovementController : MonoBehaviour
 			MoveTowardsTarget();
 		}
 	}
+	private bool IsTargetSeatOccupiedByZombie()
+	{
+		// Get the HumanSeatOccupant component
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+
+		// If we have no occupant or no target seat, we can't check
+		if (occupant == null || occupant.AssignedSeat == null)
+			return false;
+
+		// Check if the target seat is occupied by a zombie
+		return occupant.AssignedSeat.IsOccupiedByZombie;
+	}
+	private bool IsZombieNearby()
+	{
+		ZombieController zombie = FindObjectOfType<ZombieController>();
+		return zombie != null &&
+			   Vector3.Distance(transform.position, zombie.transform.position) < zombieDetectionRange &&
+			   !zombie.GetComponent<ZombieHidingSystem>().IsHidden;
+	}
 	private bool ShouldReactToZombie()
 	{
 		RollerCoasterGameManager gameManager = FindObjectOfType<RollerCoasterGameManager>();
+		ZombieHidingSystem hidingSystem = zombie?.GetComponent<ZombieHidingSystem>();
+
+		// Critical fix - check if zombie OR hiding system is null, and check IsHidden properly
+		if (zombie == null || hidingSystem == null || hidingSystem.IsHidden)
+			return false;
+
 		return !stateController.IsDead() &&
 			   gameManager.CurrentState != GameState.ZombieBoarding &&
 			   gameManager.CurrentState != GameState.RideInProgress &&
-			   gameManager.CurrentState != GameState.HumansBoardingTrain && // Add this line
-			   zombie != null &&
-			   !zombie.GetComponent<ZombieHidingSystem>().IsHidden &&
 			   Vector3.Distance(transform.position, zombie.transform.position) < zombieDetectionRange;
 	}
-	private void ReactToZombiePresence()
+	private void ReactToZombiePresence(Vector3 zombiePosition = default)
 	{
 		StopMoving();
-		humanScreamState.ScreamAndRunAway(zombie.transform.position);
+
+		// If no position was provided, try to find the zombie
+		if (zombiePosition == default)
+		{
+			ZombieController zombie = FindObjectOfType<ZombieController>();
+			if (zombie != null)
+			{
+				zombiePosition = zombie.transform.position;
+			}
+		}
+
+		// Clear seat assignment if we were heading to one
+		HumanSeatOccupant seatOccupant = GetComponent<HumanSeatOccupant>();
+		if (seatOccupant != null)
+		{
+			seatOccupant.AssignedSeat = null;
+		}
+
+		// Trigger screaming state
+		humanScreamState.ScreamAndRunAway(zombiePosition, true);
+
+		// Trigger panic in other humans
+		HumanStateController stateController = GetComponent<HumanStateController>();
+		if (stateController != null)
+		{
+			stateController.TriggerPanicInRadius(5f);
+		}
 	}
 	/// <summary>
 	/// Sets a new destination for the human to move towards.
@@ -135,6 +196,38 @@ public class HumanMovementController : MonoBehaviour
 
 	private void MoveTowardsTarget()
 	{
+		// Force refresh zombie visibility check
+		ZombieHidingSystem hidingSystem = FindObjectOfType<ZombieHidingSystem>();
+		if (hidingSystem != null && !hidingSystem.IsHidden && !hidingSystem.IsHiding)
+		{
+			ReactToZombiePresence(hidingSystem.transform.position);
+			return;
+		}
+		// Enhanced check for both visible zombies and zombies in seats
+		bool zombieVisible = IsZombieNearby();
+		bool zombieInSeat = IsTargetSeatOccupiedByZombie();
+
+		if (zombieVisible || zombieInSeat)
+		{
+			Debug.Log($"Human {gameObject.name} detected zombie during movement! Visible={zombieVisible}, InSeat={zombieInSeat}");
+			Vector3 zombiePosition = zombieVisible ?
+				FindObjectOfType<ZombieController>().transform.position :
+				GetComponent<HumanSeatOccupant>()?.AssignedSeat?.transform.position ?? transform.position;
+
+			ReactToZombiePresence(zombiePosition);
+			return;
+		}
+
+		// Check for zombie hiding system status (if it exists)
+		ZombieHidingSystem zombieHidingSystem = FindObjectOfType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
+		if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
+		{
+			Debug.Log($"Human {gameObject.name} detected unhidden zombie during movement!");
+			ReactToZombiePresence(zombieHidingSystem.transform.position);
+			return;
+		}
+
+		// Rest of the existing MoveTowardsTarget method remains unchanged
 		// Check if we've arrived at the destination
 		float distanceToTarget = Vector3.Distance(transform.position, targetPosition);
 		if (distanceToTarget <= arrivalDistance)

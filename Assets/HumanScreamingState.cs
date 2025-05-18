@@ -16,7 +16,7 @@ public class HumanScreamingState : MonoBehaviour
 	private HumanMovementController movementController;
 	private HumanStateController stateController;
 	private float originalMoveSpeed;
-	private bool isScreaming = false;
+	public bool IsScreaming { get; private set; }
 
 	public bool IsSeated()
 	{
@@ -46,7 +46,9 @@ public class HumanScreamingState : MonoBehaviour
 	/// <param name="scareSource">The position of what scared the human</param>
 	public void ScreamAndRunAway(Vector3 scareSource, bool forceReact = false)
 	{
-		if ((isScreaming && !forceReact) || stateController.IsDead() || stateController.IsOnRide())
+		if ((IsScreaming && !forceReact) ||
+			stateController.IsDead() ||
+			FindObjectOfType<RollerCoasterGameManager>().BoardingCompleted)
 			return;
 
 		StopAllCoroutines();
@@ -55,7 +57,7 @@ public class HumanScreamingState : MonoBehaviour
 
 	private System.Collections.IEnumerator ScreamAndRunSequence(Vector3 scareSource)
 	{
-		isScreaming = true;
+		IsScreaming = true;
 
 		// Play screaming animation
 		if (animator != null)
@@ -89,7 +91,7 @@ public class HumanScreamingState : MonoBehaviour
 
 		// Extended time in screaming state
 		yield return new WaitForSeconds(3); // Increased from 0.1f
-		isScreaming = false;
+		IsScreaming = false;
 	}
 
 

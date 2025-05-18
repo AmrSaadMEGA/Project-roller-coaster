@@ -142,14 +142,12 @@ public class RollerCoasterGameManager : MonoBehaviour
 		{
 			StartCoroutine(HandleZombiePresenceDuringGathering());
 		}
-		// Check if we're waiting for zombie to hide and need to monitor status
-		if (currentState == GameState.WaitingForZombieToHide)
+		if (currentState == GameState.HumansBoardingTrain)
 		{
-			if (zombieHidingSystem != null && zombieHidingSystem.IsHidden)
+			if (!boardingCompleted && zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
 			{
-				// Zombie is hidden, we can proceed to boarding
-				StopCoroutine(gameLoopCoroutine);
-				gameLoopCoroutine = StartCoroutine(GameLoop());
+				Debug.Log("Zombie exposed during active boarding! Canceling process.");
+				HandleBoardingFailure();
 			}
 		}
 		else if (currentState == GameState.ZombieBoarding)
@@ -171,14 +169,6 @@ public class RollerCoasterGameManager : MonoBehaviour
 			{
 				currentState = GameState.RideComplete;
 				StartCoroutine(CompleteRide());
-			}
-		}
-		else if (currentState == GameState.HumansBoardingTrain)
-		{
-			if (!boardingCompleted && zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
-			{
-				Debug.Log("Zombie exposed during active boarding! Canceling process.");
-				HandleBoardingFailure();
 			}
 		}
 
@@ -227,33 +217,15 @@ public class RollerCoasterGameManager : MonoBehaviour
 		while (true)
 		{
 			// PHASE 1: Humans gathering
+			yield return new WaitForSeconds(restartDelay);
 			currentState = GameState.HumansGathering;
 			yield return StartCoroutine(SpawnAndGatherHumans());
-
-			// Always reset hiding when entering waiting state
-			if (zombieHidingSystem != null && zombieHidingSystem.IsHidden)
-			{
-				zombieHidingSystem.UnhideZombie();
-			}
 
 			// PHASE 1.5: Wait for zombie hide
 			currentState = GameState.WaitingForZombieToHide;
 			Debug.Log("Waiting for player to hide the zombie...");
-
-			float hideWaitTime = 0;
-			while (!zombieHidingSystem.IsHidden && hideWaitTime < waitForZombieHidingTime)
-			{
-				hideWaitTime += Time.deltaTime;
-				yield return null;
-			}
-
-			if (!zombieHidingSystem.IsHidden)
-			{
-				Debug.Log("Zombie not hidden in time!");
-				yield return StartCoroutine(MakeHumansRunAway());
-				yield return new WaitForSeconds(restartDelay);
-				continue;
-			}
+			// Wait until the zombie is hidden
+			yield return new WaitUntil(() => zombieHidingSystem.IsHidden);
 
 			// PHASE 2: Humans boarding
 			currentState = GameState.HumansBoardingTrain;
@@ -287,14 +259,13 @@ public class RollerCoasterGameManager : MonoBehaviour
 				continue; // Skip to next iteration of the loop
 			}
 
-			// NEW PHASE: Zombie boarding
-			currentState = GameState.ZombieBoarding;
-			zombieSeated = false; // Reset zombie seated flag
-								  // ADD VALIDATION
-			if (!boardingCompleted)
+			// NEW: Proceed to zombie boarding ONLY after humans finish
+			if (boardingCompleted)
 			{
-				Debug.LogError("Zombie boarding started prematurely!");
-				yield break;
+				currentState = GameState.ZombieBoarding;
+				// Allow zombie to unhide now
+				zombieHidingSystem.UnhideZombie();
+				yield return new WaitUntil(() => !zombieHidingSystem.IsHidden);
 			}
 			// Wait for zombie to get seated or timeout
 			float waitTime = 0;
@@ -468,11 +439,11 @@ public class RollerCoasterGameManager : MonoBehaviour
 		boardingCompleted = false;
 		Debug.Log("Phase 2: Boarding humans on coaster");
 
-		// CRUCIAL CHECK: Verify zombie is hidden before attempting to board humans
-		if (zombieHidingSystem == null || !zombieHidingSystem.IsHidden)
+		// Single check at start of boarding
+		if (!zombieHidingSystem.IsHidden)
 		{
-			Debug.LogWarning("Zombie is not hidden! Humans won't board.");
-			yield return StartCoroutine(MakeHumansRunAway());
+			Debug.LogWarning("Zombie is visible! Canceling boarding.");
+			HandleBoardingFailure();
 			yield break;
 		}
 
@@ -495,6 +466,20 @@ public class RollerCoasterGameManager : MonoBehaviour
 			Debug.LogWarning("Zombie became visible during boarding prep! Humans won't board.");
 			yield return StartCoroutine(MakeHumansRunAway());
 			yield break;
+		}
+
+		// Force any HumanScreamingState components to stop screaming
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
+				if (screamState != null)
+				{
+					// Reset any screaming state that might be active
+					screamState.StopAllCoroutines();
+				}
+			}
 		}
 
 		// List to track which seats are filled
@@ -521,15 +506,113 @@ public class RollerCoasterGameManager : MonoBehaviour
 				occupant.AssignSeat(seat); // This starts movement
 			}
 		}
-		// Wait for all humans to reach their seats
-		yield return new WaitUntil(() =>
-			spawnedHumans.All(h =>
-				h.GetComponent<HumanMovementController>().HasReachedDestination()
-			)
-		);
+
+		// Start zombie check coroutine
+		Coroutine zombieCheckCoroutine = StartCoroutine(CheckForZombieVisibilityDuringBoarding());
+
+		// Wait for all humans to reach destinations or react to zombie
+		while (!spawnedHumans.All(h =>
+			h == null ||
+			h.GetComponent<HumanSeatOccupant>()?.IsSeated == true ||
+			h.GetComponent<HumanMovementController>().HasReachedDestination()))
+		{
+			// Check if any human is screaming/reacting to zombie
+			bool anyHumanReacting = spawnedHumans.Any(h =>
+				h != null &&
+				h.GetComponent<HumanScreamingState>()?.IsScreaming == true);
+
+			if (anyHumanReacting || !zombieHidingSystem.IsHidden)
+			{
+				Debug.Log("Humans detected zombie during boarding movement!");
+				StopCoroutine(zombieCheckCoroutine); // Stop the other check
+				HandleBoardingFailure();
+				yield break;
+			}
+
+			yield return new WaitForSeconds(0.1f); // Check more frequently
+		}
+
+		// Final check after reaching destinations
+		if (!zombieHidingSystem.IsHidden)
+		{
+			Debug.Log("Zombie revealed after humans reached seats!");
+			StopCoroutine(zombieCheckCoroutine);
+			HandleBoardingFailure();
+			yield break;
+		}
+
+		// Stop the visibility check coroutine
+		StopCoroutine(zombieCheckCoroutine);
+
 		boardingCompleted = true;
 		Debug.Log("All humans seated. Starting zombie boarding phase.");
 		currentState = GameState.ZombieBoarding;
+	}
+	private IEnumerator CheckForZombieVisibilityDuringBoarding()
+	{
+		while (currentState == GameState.HumansBoardingTrain && !boardingCompleted)
+		{
+			// Quick and frequent check if zombie becomes visible
+			if (!zombieHidingSystem.IsHidden)
+			{
+				Debug.Log("Zombie became visible during boarding - triggering human panic!");
+
+				// Force all moving humans to immediately react
+				foreach (GameObject human in spawnedHumans)
+				{
+					if (human == null) continue;
+
+					HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+					if (occupant != null && !occupant.IsSeated)
+					{
+						HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
+						if (screamState != null)
+						{
+							screamState.ScreamAndRunAway(zombieHidingSystem.transform.position, true);
+						}
+					}
+				}
+
+				yield return new WaitForSeconds(0.5f);
+				HandleBoardingFailure();
+				yield break;
+			}
+
+			yield return new WaitForSeconds(0.1f); // Check frequently
+		}
+	}
+	IEnumerator CheckForZombieInAssignedSeats()
+	{
+		while (currentState == GameState.HumansBoardingTrain && !boardingCompleted)
+		{
+			bool anyHumanPanicked = false;
+
+			// Check each human to see if zombie took their seat
+			foreach (GameObject human in spawnedHumans)
+			{
+				if (human == null) continue;
+
+				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+				if (occupant != null && !occupant.IsSeated)
+				{
+					// If any human panics, we'll need to reset the boarding process
+					if (occupant.CheckForZombieInAssignedSeat())
+					{
+						anyHumanPanicked = true;
+					}
+				}
+			}
+
+			// If any human panicked, trigger boarding failure
+			if (anyHumanPanicked)
+			{
+				Debug.Log("A human panicked due to zombie taking their seat! Aborting boarding.");
+				HandleBoardingFailure();
+				yield break;
+			}
+
+			yield return new WaitForSeconds(0.25f);
+		}
 	}
 	private void StartRide()
 	{
@@ -677,19 +760,6 @@ public class RollerCoasterGameManager : MonoBehaviour
 				stateInfo += $" - Zombie: {(zombieHidingSystem.IsHidden ? "Hidden" : "Visible")}";
 			}
 
-			// Add more specific state info
-			if (currentState == GameState.ZombieBoarding)
-			{
-				stateInfo += zombieSeated ? " (Zombie Seated)" : " (Waiting for Zombie)";
-				if (zombieHidingSystem != null && zombieHidingSystem.IsHidden)
-				{
-					Debug.Log("Zombie re-hidden during boarding! Resetting process.");
-					zombieSeated = false;
-					currentState = GameState.WaitingForZombieToHide;
-					if (gameLoopCoroutine != null) StopCoroutine(gameLoopCoroutine);
-					gameLoopCoroutine = StartCoroutine(GameLoop());
-				}
-			}
 			else if (currentState == GameState.WaitingForZombieToHide)
 			{
 				stateInfo += " (Player needs to hide zombie)";

@@ -325,7 +325,11 @@ public class ZombieController : MonoBehaviour
 				{
 					if (debugMode)
 						Debug.Log($"Moving to cart {cart.name}, seat {i}");
-
+					if (FindObjectOfType<RollerCoasterGameManager>().CurrentState != RollerCoasterGameManager.GameState.ZombieBoarding)
+					{
+						GetComponent<ZombieHidingSystem>().SetHideState(false);
+					}
+					ClearZombieOccupation();
 					StartCoroutine(SwitchCart(cart, i));
 					return true;
 				}
@@ -433,6 +437,10 @@ public class ZombieController : MonoBehaviour
 	}
 	private IEnumerator SwitchSeat(int newSeatIndex)
 	{
+		// Mark zombie as visible when moving
+		ZombieHidingSystem hidingSystem = GetComponent<ZombieHidingSystem>();
+		if (hidingSystem != null) hidingSystem.SetHideState(false);
+
 		isMovingBetweenSeats = true;
 
 		// Play move animation if available
@@ -464,6 +472,10 @@ public class ZombieController : MonoBehaviour
 
 	private IEnumerator SwitchCart(RollerCoasterCart newCart, int newSeatIndex)
 	{
+		// Mark zombie as visible when moving
+		ZombieHidingSystem hidingSystem = GetComponent<ZombieHidingSystem>();
+		if (hidingSystem != null) hidingSystem.SetHideState(false);
+
 		isMovingBetweenSeats = true;
 
 		// Play cross-cart move animation
@@ -494,7 +506,10 @@ public class ZombieController : MonoBehaviour
 			elapsedTime += Time.deltaTime;
 			yield return null;
 		}
-
+		// After reaching the seat:
+		newCart.seats[newSeatIndex].SetZombieOccupation(true);
+		currentCart = newCart;
+		currentSeatIndex = newSeatIndex;
 		// Ensure final position is exact
 		transform.position = targetPos;
 
@@ -503,7 +518,25 @@ public class ZombieController : MonoBehaviour
 		currentSeatIndex = newSeatIndex;
 		isMovingBetweenSeats = false;
 	}
-
+	private void ClearZombieOccupation()
+	{
+		if (currentCart != null && currentSeatIndex < currentCart.seats.Length)
+		{
+			currentCart.seats[currentSeatIndex].SetZombieOccupation(false);
+		}
+	}
+	private void ClearAllZombieOccupation()
+	{
+		foreach (var seat in currentCart.seats)
+		{
+			seat.SetZombieOccupation(false);
+		}
+	}
+	// Call this when hiding starts
+	public void PrepareToHide()
+	{
+		ClearAllZombieOccupation();
+	}
 	// This method will be called by the ZombieAnimationHandler
 	public void HandleEatingAnimationEnd()
 	{
