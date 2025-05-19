@@ -119,9 +119,10 @@ public class ZombieHidingSystem : MonoBehaviour
 		// Check game state to determine when to unhide
 		// Modified condition with additional seating check
 		if (isHidden && !isHiding && gameManager != null &&
-			   gameManager.CurrentState == GameState.ZombieBoarding &&
-			   gameManager.BoardingCompleted &&
-			   AllHumansProperlySeated())
+			gameManager.CurrentState == GameState.ZombieBoarding &&  // Only unhide during ZombieBoarding state
+			gameManager.BoardingCompleted &&                        // Ensure boarding has been marked as completed
+			gameManager.CurrentState != GameState.RideComplete &&   // Not during ride completion
+			AllHumansProperlySeated())                              // Additional verification
 		{
 			UnhideZombie();
 		}
@@ -210,12 +211,15 @@ public class ZombieHidingSystem : MonoBehaviour
 	}
 	public void UnhideZombie()
 	{
-		// Block unhiding during ride
-		if (
-			isHiding ||
+		// Add additional checks for proper game state
+		if (isHiding ||
 			!isHidden ||
-			gameManager.CurrentState == RollerCoasterGameManager.GameState.RideInProgress
-		) return;
+			gameManager.CurrentState != GameState.ZombieBoarding ||  // Only in ZombieBoarding state
+			!gameManager.BoardingCompleted ||                        // Only if boarding completed
+			gameManager.CurrentState == GameState.RideComplete ||
+			gameManager.CurrentState == GameState.RideInProgress ||
+			gameManager.SpawnedHumans.Count == 0) // New check
+			return;
 
 		StartCoroutine(UnhideZombieCoroutine());
 	}

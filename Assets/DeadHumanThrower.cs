@@ -119,14 +119,18 @@ public class DeadHumanThrower : MonoBehaviour
 	/// </summary>
 	public bool CanBeThrown()
 	{
-		if (humanController == null)
-			return false;
+		if (humanController == null) return false;
 
-		bool isDead = humanController.IsDead();
+		if (debugMode)
+		{
+			Debug.Log($"{gameObject.name} throw check: " +
+					 $"IsDead={humanController.IsDead()} " +
+					 $"State={humanController.CurrentStateAsString}");
+		}
 
-		if (debugMode && !isDead && !isBeingThrown)
-			Debug.Log($"Human {gameObject.name} cannot be thrown: IsDead={isDead}, State={humanController.CurrentStateAsString}");
-
-		return isDead && !isBeingThrown;
+		// Explicit state validation
+		return humanController.IsDead() &&
+			  humanController.CurrentStateAsString == "Dead" && // Double-check
+			  !isBeingThrown;
 	}
 }

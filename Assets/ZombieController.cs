@@ -5,6 +5,7 @@ public class ZombieController : MonoBehaviour
 {
 	[Header("Animation")]
 	[SerializeField] private string eatingStateName = "Eating";
+	[SerializeField] private string eatingAttemptStateName = "EatingAttempt";
 	[SerializeField] private string moveToSeatStateName = "MoveToSeat";
 	[SerializeField] private string throwingStateName = "Throwing";
 	[SerializeField] private string crossCartMoveStateName = "CrossCartMove";
@@ -108,6 +109,7 @@ public class ZombieController : MonoBehaviour
 
 	private bool TryThrowDeadHuman(Vector2 mousePosition)
 	{
+
 		// Find all humans in the scene
 		HumanSeatOccupant[] allHumans = FindObjectsOfType<HumanSeatOccupant>();
 
@@ -118,6 +120,16 @@ public class ZombieController : MonoBehaviour
 
 		foreach (HumanSeatOccupant human in allHumans)
 		{
+			// Add early exit for living humans
+			HumanStateController humanState = human.GetComponent<HumanStateController>();
+			if (humanState != null && !humanState.IsDead())
+			{
+				// To this:
+				if (humanState != null && !humanState.IsDead())
+				{
+					continue; // ✅ Correct - skips living humans
+				}
+			}
 			// First check if the mouse is directly clicking on this human
 			float distanceToMouse = Vector2.Distance(mousePosition, human.transform.position);
 
@@ -347,7 +359,7 @@ public class ZombieController : MonoBehaviour
 		// Track the human that was directly clicked
 		HumanSeatOccupant clickedHuman = null;
 		HumanStateController clickedController = null;
-		float closestDistance = humanClickRadius; // Initialize with max allowed distance
+		float closestDistance = humanClickRadius;
 
 		foreach (HumanSeatOccupant human in allHumans)
 		{
@@ -397,12 +409,12 @@ public class ZombieController : MonoBehaviour
 				continue;
 			}
 
-			// Check if the human is vulnerable
+			// MODIFIED: Remove vulnerability check here
 			HumanStateController humanController = human.GetComponent<HumanStateController>();
-			if (humanController == null || !humanController.IsVulnerable())
+			if (humanController == null)
 			{
 				if (debugMode)
-					Debug.Log($"Human {human.name} is not vulnerable.");
+					Debug.Log($"Human {human.name} has no state controller");
 				continue;
 			}
 
@@ -419,21 +431,47 @@ public class ZombieController : MonoBehaviour
 		}
 
 		// If a valid human is found, attack them
+		// In TryEatHuman method, replace the attack section with:
 		if (clickedHuman != null && clickedController != null)
 		{
-			if (debugMode)
-				Debug.Log($"ATTACKING: {clickedHuman.name}");
+			// NEW: Priority check for defensive state
+			if (clickedController.IsDefensive())
+			{
+				// Get human's position data
+				RollerCoasterCart targetCart = clickedHuman.OccupiedSeat.GetComponentInParent<RollerCoasterCart>();
+				int targetSeatIndex = targetCart.GetSeatIndex(clickedHuman.OccupiedSeat);
 
-			targetHuman = clickedController;
-			if (animator != null)
+				clickedController.EscapeAndDespawn();
+				StartCoroutine(CheckAdjacentAfterEscape(targetCart, targetSeatIndex));
+				return true;
+			}
+			else if (clickedController.IsVulnerable())
+			{
+				// Get cart and seat index BEFORE using them
+				RollerCoasterCart targetCart = clickedHuman.OccupiedSeat.GetComponentInParent<RollerCoasterCart>();
+				int targetSeatIndex = targetCart.GetSeatIndex(clickedHuman.OccupiedSeat);
+				targetHuman = clickedController;
 				animator.Play(eatingStateName);
-			return true;
+				StartCoroutine(CheckAdjacentAfterEscape(targetCart, targetSeatIndex));
+				return true;
+			}
 		}
-
-		if (debugMode)
-			Debug.Log("No valid human targets found in the clicked position");
-
 		return false;
+	}
+	private IEnumerator CheckAdjacentAfterEscape(RollerCoasterCart cart, int seatIndex)
+	{
+		yield return new WaitForSeconds(0.3f);
+
+		if (cart.TryGetAdjacentSeat(seatIndex, out int adjacentIndex))
+		{
+			RollerCoasterSeat adjacentSeat = cart.seats[adjacentIndex];
+			HumanStateController adjacentHuman = adjacentSeat.occupyingHuman;
+
+			if (adjacentHuman != null && adjacentHuman.IsDefensive())
+			{
+				adjacentHuman.EscapeAndDespawn();
+			}
+		}
 	}
 	private IEnumerator SwitchSeat(int newSeatIndex)
 	{
@@ -540,9 +578,20 @@ public class ZombieController : MonoBehaviour
 	// This method will be called by the ZombieAnimationHandler
 	public void HandleEatingAnimationEnd()
 	{
+		if (animator.GetCurrentAnimatorStateInfo(0).IsName(eatingAttemptStateName))
+		{
+			// Reset to idle if attack failed
+			animator.Play("Idle");
+			return;
+		}
 		if (targetHuman != null)
 		{
 			targetHuman.Die(true); // Pass true for zombie-caused death
+			ZombieHungerSystem hungerSystem = FindObjectOfType<ZombieHungerSystem>();
+			if (hungerSystem != null)
+			{
+				hungerSystem.DecreaseHunger();
+			}
 			targetHuman = null;
 		}
 	}

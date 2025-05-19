@@ -194,7 +194,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: db8b509a65a98b34993973b35f29f6ec, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  occupiedSeat: {fileID: 0}
 --- !u!114 &5250047920976725213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -247,3 +246,6 @@ MonoBehaviour:
   screamingStateName: Screaming
   screamDuration: 5
   panicRunSpeedMultiplier: 0.5
+  jumpStateName: Jump
+  jumpHeight: 2
+  jumpDuration: 0.5

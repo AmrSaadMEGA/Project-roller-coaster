@@ -31,7 +31,8 @@ public class HumanStateController : MonoBehaviour
 
 	private Animator animator;
 	public bool IsVulnerable() => currentState == State.Vulnerable;
-	public bool IsDead() => currentState == State.Dead;
+	// Add this method to HumanStateController
+	public bool IsDefensive() => currentState == State.Defensive;
 
 	// Add a public getter to access the current state as a string (for debugging)
 	public string CurrentStateAsString => currentState.ToString();
@@ -85,6 +86,46 @@ public class HumanStateController : MonoBehaviour
 			}
 		}
 	}
+	public bool IsDead()
+	{
+		// Enforce state consistency
+		if (currentState == State.Dead)
+		{
+			if (CurrentStateAsString != "Dead")
+			{
+				Debug.LogError($"State mismatch! Enum: {currentState} String: {CurrentStateAsString}");
+			}
+			return true;
+		}
+		return false;
+	}
+
+	public void EscapeAndDespawn()
+	{
+		if (currentState == State.Dead) return;
+
+		// Immediately update state FIRST
+		currentState = State.Dead;
+
+		// Clean up components
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		if (occupant != null)
+		{
+			occupant.LeaveSeat();
+			Destroy(occupant); // Remove seat management
+		}
+
+		// Visual escape
+		HumanScreamingState screamState = GetComponent<HumanScreamingState>();
+		if (screamState != null)
+		{
+			screamState.JumpAndDespawn();
+		}
+		else
+		{
+			Destroy(gameObject); // Fallback
+		}
+	}
 	public bool IsOnRide()
 	{
 		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
@@ -113,6 +154,11 @@ public class HumanStateController : MonoBehaviour
 	public void Die(bool causedByZombie = false)
 	{
 		if (currentState == State.Dead) return;
+
+		// Don't trigger normal death if escaping
+		var screamState = GetComponent<HumanScreamingState>();
+		if (screamState != null && screamState.IsScreaming)
+			return;
 
 		currentState = State.Dead;
 		if (animator != null)

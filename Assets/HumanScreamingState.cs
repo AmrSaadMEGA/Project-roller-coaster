@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(Animator))]
@@ -16,8 +17,89 @@ public class HumanScreamingState : MonoBehaviour
 	private HumanMovementController movementController;
 	private HumanStateController stateController;
 	private float originalMoveSpeed;
-	public bool IsScreaming { get; private set; }
 
+	// Add to HumanScreamingState class
+	[SerializeField] private string jumpStateName = "Jump";
+	[SerializeField] private float jumpHeight = 2f;
+	[SerializeField] private float jumpDuration = 0.5f;
+	public bool IsScreaming { get; private set; }
+	public void ForceJumpAndDespawn()
+	{
+		StopAllCoroutines();
+		StartCoroutine(ImmediateJumpSequence());
+	}
+
+	private IEnumerator ImmediateJumpSequence()
+	{
+		// Immediate state cleanup
+		IsScreaming = true;
+		animator.Play(jumpStateName);
+
+		// Disable all interactions
+		Collider2D[] colliders = GetComponents<Collider2D>();
+		foreach (Collider2D col in colliders) col.enabled = false;
+
+		// Teleport to jump start position
+		Vector3 startPos = transform.position;
+		Vector3 peakPos = startPos + Vector3.up * jumpHeight;
+
+		// Instant jump visualization
+		transform.position = peakPos;
+		yield return new WaitForSeconds(0.1f);
+		Destroy(gameObject);
+	}
+	public void JumpAndDespawn()
+	{
+		if (IsScreaming) return;
+
+		// Cancel any existing movement
+		HumanMovementController movement = GetComponent<HumanMovementController>();
+		if (movement != null)
+		{
+			movement.StopMoving();
+			movement.enabled = false;
+		}
+
+		// Clear seat occupation
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		if (occupant != null)
+		{
+			occupant.LeaveSeat();
+			Destroy(occupant);
+		}
+
+		StartCoroutine(JumpSequence());
+	}
+	private System.Collections.IEnumerator JumpSequence()
+	{
+		IsScreaming = true;
+		animator.Play(jumpStateName);
+
+		// Disable collider to prevent further interactions
+		Collider2D col = GetComponent<Collider2D>();
+		if (col != null) col.enabled = false;
+
+		Vector3 startPos = transform.position;
+		Vector3 peakPos = startPos + Vector3.up * jumpHeight;
+
+		float elapsed = 0;
+		while (elapsed < jumpDuration / 2)
+		{
+			transform.position = Vector3.Lerp(startPos, peakPos, elapsed / (jumpDuration / 2));
+			elapsed += Time.deltaTime;
+			yield return null;
+		}
+
+		elapsed = 0;
+		while (elapsed < jumpDuration / 2)
+		{
+			transform.position = Vector3.Lerp(peakPos, startPos, elapsed / (jumpDuration / 2));
+			elapsed += Time.deltaTime;
+			yield return null;
+		}
+
+		Destroy(gameObject);
+	}
 	public bool IsSeated()
 	{
 		// Correct seated check logic

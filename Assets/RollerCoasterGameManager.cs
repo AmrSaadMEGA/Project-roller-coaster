@@ -44,6 +44,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	// Add new variable
 	private bool boardingCompleted;
+
+	private bool _isLossDuringRide;
+	public bool IsLossDuringRide => _isLossDuringRide; // Expose through property
 	public enum GameState
 	{
 		HumansGathering,
@@ -204,9 +207,30 @@ public class RollerCoasterGameManager : MonoBehaviour
 			}
 		}
 	}
+	public void ClearAllSeats()
+	{
+		foreach (RollerCoasterCart cart in coasterCarts)
+		{
+			foreach (RollerCoasterSeat seat in cart.seats)
+			{
+				seat.occupyingHuman = null;
+				seat.SetZombieOccupation(false);
+
+				// Reset human occupant if exists
+				if (seat.occupyingHuman != null)
+				{
+					HumanSeatOccupant occupant = seat.occupyingHuman.GetComponent<HumanSeatOccupant>();
+					if (occupant != null)
+					{
+						occupant.LeaveSeat();
+					}
+				}
+			}
+		}
+	}
 	private void HandleBoardingFailure()
 	{
-		boardingCompleted = false; // ✅ Add this
+		boardingCompleted = false;
 		if (gameLoopCoroutine != null) StopCoroutine(gameLoopCoroutine);
 		currentState = GameState.WaitingForZombieToHide;
 		StartCoroutine(MakeHumansRunAway());
@@ -581,38 +605,62 @@ public class RollerCoasterGameManager : MonoBehaviour
 			yield return new WaitForSeconds(0.1f); // Check frequently
 		}
 	}
-	IEnumerator CheckForZombieInAssignedSeats()
+	// RollerCoasterGameManager.cs
+	// In RollerCoasterGameManager.cs - Modify the GameOverDueToHunger method
+	public void GameOverDueToHunger()
 	{
-		while (currentState == GameState.HumansBoardingTrain && !boardingCompleted)
+		Debug.Log("Game Over - Zombie starved!");
+
+		// Clear all seats first
+		ClearAllSeats();
+
+		// Immediately destroy all humans
+		foreach (GameObject human in spawnedHumans.ToList())
 		{
-			bool anyHumanPanicked = false;
-
-			// Check each human to see if zombie took their seat
-			foreach (GameObject human in spawnedHumans)
+			if (human != null)
 			{
-				if (human == null) continue;
-
+				// Force leave seat before destruction
 				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
-				if (occupant != null && !occupant.IsSeated)
+				if (occupant != null)
 				{
-					// If any human panics, we'll need to reset the boarding process
-					if (occupant.CheckForZombieInAssignedSeat())
-					{
-						anyHumanPanicked = true;
-					}
+					occupant.LeaveSeat();
 				}
+				Destroy(human);
 			}
-
-			// If any human panicked, trigger boarding failure
-			if (anyHumanPanicked)
-			{
-				Debug.Log("A human panicked due to zombie taking their seat! Aborting boarding.");
-				HandleBoardingFailure();
-				yield break;
-			}
-
-			yield return new WaitForSeconds(0.25f);
 		}
+		spawnedHumans.Clear();
+
+		// Reset boarding states
+		boardingCompleted = false;
+		zombieSeated = false;
+
+		// Stop scroller
+		scrollerManager.StopScrolling();
+
+		// Update state - set to RideComplete to ensure animation works correctly
+		currentState = GameState.RideComplete;
+		_isLossDuringRide = (currentState == GameState.RideInProgress);
+
+		// Reset hunger system
+		ZombieHungerSystem hungerSystem = FindObjectOfType<ZombieHungerSystem>();
+		hungerSystem.ResetHungerSystem();
+
+		// Move the hiding spot from offscreen right to center
+		if (zombieHidingManager != null)
+		{
+			HideSpotMovementSystem movementSystem = zombieHidingManager.GetComponent<HideSpotMovementSystem>();
+			if (movementSystem != null)
+			{
+
+				// Position at offscreen right and start animation
+				movementSystem.SetHideSpotPosition(movementSystem.OffscreenRightPosition);
+				movementSystem.MoveHideSpotToCenter();
+			}
+		}
+
+		// Restart game flow
+		StopAllCoroutines();
+		StartCoroutine(GameLose());
 	}
 	private void StartRide()
 	{
@@ -626,24 +674,35 @@ public class RollerCoasterGameManager : MonoBehaviour
 		allHumansDead = false;
 	}
 
+	private IEnumerator GameLose()
+	{
+		yield return new WaitForSeconds(3);
+		yield return StartCoroutine(GameLoop());
+	}
+	// In RollerCoasterGameManager.cs
 	private IEnumerator CompleteRide()
 	{
 		Debug.Log("Ride complete - all humans are dead");
-
-		// Stop the coaster
 		scrollerManager.StopScrolling();
 
-		// Force hide spot to center with right-to-center movement
+		// Force the zombie hiding spot to animate from right to center
 		if (zombieHidingManager != null)
 		{
-			zombieHidingManager.ForceHideSpotToCenter();
+			// First make sure we start from the right position
+			HideSpotMovementSystem movementSystem = zombieHidingManager.GetComponent<HideSpotMovementSystem>();
+			if (movementSystem != null)
+			{
+
+				// Start animation from right to center
+				movementSystem.MoveHideSpotToCenter();
+
+				// Wait for animation to complete
+				Debug.Log("Waiting for hide spot animation to complete...");
+				yield return null;
+			}
 		}
 
-		// Wait a moment
-		yield return new WaitForSeconds(2f);
-
-		// Move to restarting phase
-		currentState = GameState.RideRestarting;
+		RestartGame();
 	}
 	private void CheckHumansStatus()
 	{
@@ -668,51 +727,34 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	private void ClearSpawnedHumans()
 	{
-		Debug.Log($"Clearing {spawnedHumans.Count} spawned humans and any strays in the scene");
+		Debug.Log($"Clearing {spawnedHumans.Count} spawned humans");
 
-		// Only destroy NON-SEATED humans
-		List<GameObject> humansToRemove = new List<GameObject>();
-		foreach (GameObject human in spawnedHumans)
-		{
-			HumanSeatOccupant occupant = human?.GetComponent<HumanSeatOccupant>();
-			if (occupant == null || !occupant.IsSeated)
-			{
-				humansToRemove.Add(human);
-			}
-		}
-
-		// Remove and destroy non-seated humans
-		foreach (GameObject human in humansToRemove)
+		foreach (GameObject human in spawnedHumans.ToList())
 		{
 			if (human != null)
 			{
-				spawnedHumans.Remove(human);
+				// Force leave seat before destruction
+				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+				if (occupant != null)
+				{
+					occupant.LeaveSeat();
+				}
 				Destroy(human);
 			}
 		}
+		spawnedHumans.Clear();
 
-		// Clear null entries
-		spawnedHumans.RemoveAll(h => h == null);
-
-		// Don't clear seats here - they are managed by the boarding process
+		// Cleanup any remaining humans in the scene
+		foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+		{
+			if (human != null && !spawnedHumans.Contains(human.gameObject))
+			{
+				Destroy(human.gameObject);
+			}
+		}
 	}
 	public void RestartGame()
 	{
-		// Ensure hide spot moves off screen before next round
-		if (zombieHidingManager != null)
-		{
-			zombieHidingManager.ForceHideSpotOffscreen();
-		}
-
-		// Set state to restarting
-		currentState = GameState.RideRestarting;
-
-		// Restart the game loop
-		if (gameLoopCoroutine != null)
-		{
-			StopCoroutine(gameLoopCoroutine);
-		}
-		gameLoopCoroutine = StartCoroutine(GameLoop());
 	}
 	// For visualization in the editor
 #if UNITY_EDITOR
