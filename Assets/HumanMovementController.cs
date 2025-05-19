@@ -102,13 +102,24 @@ public class HumanMovementController : MonoBehaviour
 	}
 	private bool ShouldReactToZombie()
 	{
+		// FIXED: More robust check for zombie visibility
 		RollerCoasterGameManager gameManager = FindObjectOfType<RollerCoasterGameManager>();
 		ZombieHidingSystem hidingSystem = zombie?.GetComponent<ZombieHidingSystem>();
 
-		// Critical fix - check if zombie OR hiding system is null, and check IsHidden properly
-		if (zombie == null || hidingSystem == null || hidingSystem.IsHidden)
+		// Critical fix - check if zombie OR hiding system is null, and ensure IsHidden is checked properly
+		if (zombie == null || hidingSystem == null)
 			return false;
 
+		// IMPORTANT FIX: Add this additional verification to ensure the zombie is ACTUALLY visible
+		// This helps prevent false positives that trigger the infinite loop
+		if (hidingSystem.IsHidden || hidingSystem.IsHiding)
+			return false;
+
+		// Only react when:
+		// 1. Human is alive
+		// 2. We're not in zombie boarding or ride phases
+		// 3. Zombie is close enough
+		// 4. Zombie is DEFINITELY visible (not hidden or in transition)
 		return !stateController.IsDead() &&
 			   gameManager.CurrentState != GameState.ZombieBoarding &&
 			   gameManager.CurrentState != GameState.RideInProgress &&
@@ -196,15 +207,23 @@ public class HumanMovementController : MonoBehaviour
 
 	private void MoveTowardsTarget()
 	{
-		// Force refresh zombie visibility check
+		// FIXED: More careful check for zombie visibility that prevents false positives
 		ZombieHidingSystem hidingSystem = FindObjectOfType<ZombieHidingSystem>();
 		if (hidingSystem != null && !hidingSystem.IsHidden && !hidingSystem.IsHiding)
 		{
+			// Add debug to track this condition
+			Debug.Log($"Human {gameObject.name} detected unhidden zombie during movement!");
 			ReactToZombiePresence(hidingSystem.transform.position);
 			return;
 		}
-		// Enhanced check for both visible zombies and zombies in seats
-		bool zombieVisible = IsZombieNearby();
+
+		// IMPORTANT: Only check for visible zombies when they're definitely not hidden
+		bool zombieVisible = false;
+		if (hidingSystem != null && !hidingSystem.IsHidden && !hidingSystem.IsHiding)
+		{
+			zombieVisible = IsZombieNearby();
+		}
+
 		bool zombieInSeat = IsTargetSeatOccupiedByZombie();
 
 		if (zombieVisible || zombieInSeat)
@@ -215,15 +234,6 @@ public class HumanMovementController : MonoBehaviour
 				GetComponent<HumanSeatOccupant>()?.AssignedSeat?.transform.position ?? transform.position;
 
 			ReactToZombiePresence(zombiePosition);
-			return;
-		}
-
-		// Check for zombie hiding system status (if it exists)
-		ZombieHidingSystem zombieHidingSystem = FindObjectOfType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
-		if (zombieHidingSystem != null && !zombieHidingSystem.IsHidden)
-		{
-			Debug.Log($"Human {gameObject.name} detected unhidden zombie during movement!");
-			ReactToZombiePresence(zombieHidingSystem.transform.position);
 			return;
 		}
 

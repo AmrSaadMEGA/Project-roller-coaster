@@ -93,7 +93,7 @@ public class ZombieHungerSystem : MonoBehaviour
     {
         if (headCountText != null)
         {
-            headCountText.text = $"Heads: {headsEaten}";
+            headCountText.text = $"{headsEaten}";
         }
     }
 

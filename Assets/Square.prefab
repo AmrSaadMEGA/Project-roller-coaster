@@ -107,13 +107,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   minVulnerable: 2
-  maxVulnerable: 20
+  maxVulnerable: 10
   minDefensive: 1
   maxDefensive: 4
   vulnerableStateName: Vulnerable
   defensiveStateName: Defensive
   deathStateName: Death
   showStateGizmo: 1
+  defensiveJumpDelay: 0.5
+  emptySeatJumpDelay: 1
 --- !u!95 &7746347682037872771
 Animator:
   serializedVersion: 7

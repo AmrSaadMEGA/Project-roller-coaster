@@ -463,8 +463,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 		boardingCompleted = false;
 		Debug.Log("Phase 2: Boarding humans on coaster");
 
-		// Single check at start of boarding
-		if (!zombieHidingSystem.IsHidden)
+		// FIXED: More reliable zombie visibility check
+		// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
+		if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
 		{
 			Debug.LogWarning("Zombie is visible! Canceling boarding.");
 			HandleBoardingFailure();
@@ -484,8 +485,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 		// Short delay before boarding
 		yield return new WaitForSeconds(boardingDelay);
 
-		// Continuous check for zombie hiding status during boarding prep
-		if (!zombieHidingSystem.IsHidden)
+		// FIXED: More reliable zombie visibility check
+		// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
+		if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
 		{
 			Debug.LogWarning("Zombie became visible during boarding prep! Humans won't board.");
 			yield return StartCoroutine(MakeHumansRunAway());
@@ -534,18 +536,22 @@ public class RollerCoasterGameManager : MonoBehaviour
 		// Start zombie check coroutine
 		Coroutine zombieCheckCoroutine = StartCoroutine(CheckForZombieVisibilityDuringBoarding());
 
+		// FIXED: Add a debug message for clarity
+		Debug.Log("Humans are moving to seats. Waiting for boarding to complete...");
+
 		// Wait for all humans to reach destinations or react to zombie
 		while (!spawnedHumans.All(h =>
 			h == null ||
 			h.GetComponent<HumanSeatOccupant>()?.IsSeated == true ||
 			h.GetComponent<HumanMovementController>().HasReachedDestination()))
 		{
-			// Check if any human is screaming/reacting to zombie
+			// FIXED: More reliable zombie visibility check
+			// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
 			bool anyHumanReacting = spawnedHumans.Any(h =>
 				h != null &&
 				h.GetComponent<HumanScreamingState>()?.IsScreaming == true);
 
-			if (anyHumanReacting || !zombieHidingSystem.IsHidden)
+			if (anyHumanReacting || (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding))
 			{
 				Debug.Log("Humans detected zombie during boarding movement!");
 				StopCoroutine(zombieCheckCoroutine); // Stop the other check
@@ -557,7 +563,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 
 		// Final check after reaching destinations
-		if (!zombieHidingSystem.IsHidden)
+		// FIXED: More reliable zombie visibility check
+		// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
+		if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
 		{
 			Debug.Log("Zombie revealed after humans reached seats!");
 			StopCoroutine(zombieCheckCoroutine);
@@ -576,8 +584,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 	{
 		while (currentState == GameState.HumansBoardingTrain && !boardingCompleted)
 		{
-			// Quick and frequent check if zombie becomes visible
-			if (!zombieHidingSystem.IsHidden)
+			// FIXED: More reliable zombie visibility check
+			// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
+			if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
 			{
 				Debug.Log("Zombie became visible during boarding - triggering human panic!");
 

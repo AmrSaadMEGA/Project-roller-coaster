@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using UnityEngine;
 using static RollerCoasterGameManager;
 
 public class HumanStateController : MonoBehaviour
@@ -26,6 +27,15 @@ public class HumanStateController : MonoBehaviour
 	private float defensiveDuration;
 	private float stateTimer;
 
+	[Header("Panic Reactions")]
+	[SerializeField] private float defensiveJumpDelay = 0.5f;
+	[SerializeField] private float emptySeatJumpDelay = 1.0f;
+	[SerializeField] private float zombieDetectionDelay = 0.2f;
+	[SerializeField] private float zombieCheckInterval = 0.5f;
+
+	private bool isCheckingSeat = false;
+	private bool isCheckingForZombie = false;
+
 	public enum State { Vulnerable, Defensive, Dead }
 	private State currentState;
 
@@ -33,12 +43,14 @@ public class HumanStateController : MonoBehaviour
 	public bool IsVulnerable() => currentState == State.Vulnerable;
 	// Add this method to HumanStateController
 	public bool IsDefensive() => currentState == State.Defensive;
+	RollerCoasterGameManager gameManager;
 
 	// Add a public getter to access the current state as a string (for debugging)
 	public string CurrentStateAsString => currentState.ToString();
 
 	void Awake()
 	{
+		gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 		animator = GetComponent<Animator>();
 		if (animator == null)
 			Debug.LogError("HumanStateController requires an Animator component.");
@@ -60,32 +72,195 @@ public class HumanStateController : MonoBehaviour
 			gameObject.AddComponent<DeadHumanThrower>();
 		}
 		zombie = FindObjectOfType<ZombieController>(); // Single FindObjectOfType call
+
+		// Start zombie check immediately if starting in vulnerable state
+		if (currentState == State.Vulnerable && !isCheckingForZombie)
+		{
+			isCheckingForZombie = true;
+			StartCoroutine(CheckForZombieRoutine());
+		}
 	}
 
 	void Update()
 	{
+		if (gameManager.CurrentState != GameState.RideInProgress)
+		{
+			return;
+		}
 		if (currentState == State.Dead)
-			return; // no more state changes once dead
+			return;
 
 		stateTimer -= Time.deltaTime;
+
 		if (stateTimer <= 0f)
 		{
 			if (currentState == State.Vulnerable)
 			{
-				currentState = State.Defensive;
-				stateTimer = defensiveDuration;
-				if (animator != null)
-					animator.Play(defensiveStateName);
+				EnterDefensiveState();
 			}
 			else if (currentState == State.Defensive)
 			{
-				currentState = State.Vulnerable;
-				stateTimer = vulnerableDuration;
-				if (animator != null)
-					animator.Play(vulnerableStateName);
+				EnterVulnerableState();
 			}
 		}
 	}
+
+	private void EnterVulnerableState()
+	{
+		currentState = State.Vulnerable;
+		stateTimer = vulnerableDuration;
+		animator?.Play(vulnerableStateName);
+		isCheckingSeat = false;
+
+		// Start checking for zombies when entering vulnerable state
+		if (!isCheckingForZombie)
+		{
+			isCheckingForZombie = true;
+			StartCoroutine(CheckForZombieRoutine());
+		}
+	}
+
+	private void EnterDefensiveState()
+	{
+		currentState = State.Defensive;
+		stateTimer = defensiveDuration;
+		animator?.Play(defensiveStateName);
+		isCheckingForZombie = false;
+
+		// Immediate check first
+		CheckAdjacentSeatStatus();
+
+		if (!isCheckingSeat)
+		{
+			isCheckingSeat = true;
+			StartCoroutine(HandleDefensiveReactions());
+		}
+	}
+
+	private IEnumerator CheckForZombieRoutine()
+	{
+		// Small initial delay before first check
+		yield return new WaitForSeconds(zombieDetectionDelay);
+
+		while (currentState == State.Vulnerable && !IsDead())
+		{
+			CheckForAdjacentZombie();
+			yield return new WaitForSeconds(zombieCheckInterval);
+		}
+
+		isCheckingForZombie = false;
+	}
+
+	private void CheckForAdjacentZombie()
+	{
+		// Early exit if not in ride
+		if (gameManager.CurrentState != GameState.RideInProgress) return;
+
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		if (occupant == null || !occupant.IsSeated) return;
+
+		RollerCoasterSeat currentSeat = occupant.OccupiedSeat;
+		if (currentSeat == null) return;
+
+		RollerCoasterCart cart = currentSeat.GetComponentInParent<RollerCoasterCart>();
+		if (cart == null) return;
+
+		int seatIndex = cart.GetSeatIndex(currentSeat);
+		if (!cart.TryGetAdjacentSeat(seatIndex, out int adjacentIndex)) return;
+
+		// Validate adjacent seat reference
+		if (adjacentIndex < 0 || adjacentIndex >= cart.seats.Length) return;
+		RollerCoasterSeat adjacentSeat = cart.seats[adjacentIndex];
+		if (adjacentSeat == null) return;
+
+		// Check specifically for zombie in adjacent seat
+		bool zombiePresent = adjacentSeat.IsOccupiedByZombie;
+
+		if (zombiePresent)
+		{
+			Debug.Log($"{name} detected zombie while vulnerable! Panicking!");
+
+			// Only jump if not already screaming
+			HumanScreamingState screamState = GetComponent<HumanScreamingState>();
+			if (screamState != null && !screamState.IsScreaming)
+			{
+				StartCoroutine(JumpAfterDelay(zombieDetectionDelay, adjacentSeat));
+			}
+		}
+	}
+
+	private IEnumerator HandleDefensiveReactions()
+	{
+		// Wait for defensive animation to play briefly
+		yield return new WaitForSeconds(defensiveJumpDelay);
+
+		while (currentState == State.Defensive && !IsDead())
+		{
+			CheckAdjacentSeatStatus();
+			yield return new WaitForSeconds(0.2f); // Increased from 0.5f to 0.2f
+		}
+	}
+
+	private void CheckAdjacentSeatStatus()
+	{
+		// Early exit if not in ride
+		if (gameManager.CurrentState != GameState.RideInProgress) return;
+
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
+		if (occupant == null || !occupant.IsSeated) return;
+
+		RollerCoasterSeat currentSeat = occupant.OccupiedSeat;
+		if (currentSeat == null) return;
+
+		RollerCoasterCart cart = currentSeat.GetComponentInParent<RollerCoasterCart>();
+		if (cart == null) return;
+
+		int seatIndex = cart.GetSeatIndex(currentSeat);
+		if (!cart.TryGetAdjacentSeat(seatIndex, out int adjacentIndex)) return;
+
+		// Validate adjacent seat reference
+		if (adjacentIndex < 0 || adjacentIndex >= cart.seats.Length) return;
+		RollerCoasterSeat adjacentSeat = cart.seats[adjacentIndex];
+		if (adjacentSeat == null) return;
+
+		// Check for empty seat, dead body or zombie
+		bool seatEmpty = adjacentSeat.occupyingHuman == null && !adjacentSeat.IsOccupiedByZombie;
+		bool deadBody = adjacentSeat.occupyingHuman != null && adjacentSeat.occupyingHuman.IsDead();
+		bool zombiePresent = adjacentSeat.IsOccupiedByZombie;
+
+		if (!seatEmpty && !deadBody && !zombiePresent) return;
+
+		// Only jump if not already screaming
+		HumanScreamingState screamState = GetComponent<HumanScreamingState>();
+		if (screamState != null && !screamState.IsScreaming)
+		{
+			float jumpDelay = zombiePresent ? defensiveJumpDelay * 0.5f : (seatEmpty ? emptySeatJumpDelay : defensiveJumpDelay);
+			StartCoroutine(JumpAfterDelay(jumpDelay, adjacentSeat));
+		}
+	}
+
+	private IEnumerator JumpAfterDelay(float delay, RollerCoasterSeat adjacentSeat)
+	{
+		// Debug logging
+		string jumpReason = adjacentSeat.IsOccupiedByZombie ? "zombie" :
+							(adjacentSeat.occupyingHuman == null ? "empty seat" : "dead body");
+		Debug.Log($"{name} detected {jumpReason}, jumping in {delay} seconds");
+
+		yield return new WaitForSeconds(delay);
+
+		// Double-check conditions before jumping
+		if ((currentState == State.Defensive || currentState == State.Vulnerable) && !IsDead())
+		{
+			Debug.Log($"{name} executing jump");
+			HumanScreamingState screamState = GetComponent<HumanScreamingState>();
+			screamState?.JumpAndDespawn();
+		}
+		else
+		{
+			Debug.Log($"{name} aborted jump - now in state: {currentState}");
+		}
+	}
+
 	public bool IsDead()
 	{
 		// Enforce state consistency
@@ -126,6 +301,7 @@ public class HumanStateController : MonoBehaviour
 			Destroy(gameObject); // Fallback
 		}
 	}
+
 	public bool IsOnRide()
 	{
 		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
@@ -136,6 +312,7 @@ public class HumanStateController : MonoBehaviour
 			   (gameManager.CurrentState == GameState.RideInProgress ||
 				gameManager.CurrentState == GameState.HumansBoardingTrain);
 	}
+
 	/// <summary>
 	/// Call this to kill the human: plays the death animation and stops further state changes.
 	/// </summary>
@@ -151,6 +328,7 @@ public class HumanStateController : MonoBehaviour
 			}
 		}
 	}
+
 	public void Die(bool causedByZombie = false)
 	{
 		if (currentState == State.Dead) return;

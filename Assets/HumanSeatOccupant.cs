@@ -45,9 +45,9 @@ public class HumanSeatOccupant : MonoBehaviour
 		// Wait until movement ends
 		while (movementController != null && movementController.IsMoving())
 		{
-			// Check zombie visibility state EVERY FRAME
-
-			if (zombieHiding != null && !zombieHiding.IsHidden)
+			// FIXED: More reliable zombie visibility check
+			// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
+			if (zombieHiding != null && !zombieHiding.IsHidden && !zombieHiding.IsHiding)
 			{
 				// Signal zombie detection and trigger panic
 				HumanScreamingState screamState = GetComponent<HumanScreamingState>();
@@ -129,6 +129,7 @@ public class HumanSeatOccupant : MonoBehaviour
 			Debug.Log($"Human {gameObject.name} aborted seat occupation!");
 		}
 	}
+
 	// Change 2: Add a method to check for zombie in assigned seat
 	// Add this method to the HumanSeatOccupant class:
 
