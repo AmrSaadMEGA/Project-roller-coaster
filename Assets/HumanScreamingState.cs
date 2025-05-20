@@ -1,7 +1,6 @@
 using System.Collections;
 using UnityEngine;
 
-[RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(HumanMovementController))]
 public class HumanScreamingState : MonoBehaviour
 {
@@ -108,7 +107,7 @@ public class HumanScreamingState : MonoBehaviour
 	}
 	private void Awake()
 	{
-		animator = GetComponent<Animator>();
+		animator = GetComponentInChildren<Animator>();
 		movementController = GetComponent<HumanMovementController>();
 		stateController = GetComponent<HumanStateController>();
 
@@ -126,15 +125,19 @@ public class HumanScreamingState : MonoBehaviour
 	/// Makes the human scream and run away in a panic
 	/// </summary>
 	/// <param name="scareSource">The position of what scared the human</param>
-	public void ScreamAndRunAway(Vector3 scareSource, bool forceReact = false)
+	public void ScreamAndRunAway(Vector3 threatPosition, bool forceReact = false)
 	{
+		HumanStateController state = GetComponent<HumanStateController>();
+
+		// Prevent reaction if being despawned
+		if (state != null && state.IsBeingDespawned) return;
 		if ((IsScreaming && !forceReact) ||
 			stateController.IsDead() ||
 			FindObjectOfType<RollerCoasterGameManager>().BoardingCompleted)
 			return;
 
 		StopAllCoroutines();
-		StartCoroutine(ScreamAndRunSequence(scareSource));
+		StartCoroutine(ScreamAndRunSequence(stateController.transform.position));
 	}
 
 	private System.Collections.IEnumerator ScreamAndRunSequence(Vector3 scareSource)

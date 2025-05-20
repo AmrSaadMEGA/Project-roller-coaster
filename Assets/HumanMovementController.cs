@@ -81,6 +81,10 @@ public class HumanMovementController : MonoBehaviour
 			MoveTowardsTarget();
 		}
 	}
+	public Vector3 GetDestination()
+	{
+		return targetPosition;
+	}
 	private bool IsTargetSeatOccupiedByZombie()
 	{
 		// Get the HumanSeatOccupant component
@@ -242,7 +246,8 @@ public class HumanMovementController : MonoBehaviour
 		float distanceToTarget = Vector3.Distance(transform.position, targetPosition);
 		if (distanceToTarget <= arrivalDistance)
 		{
-			// We've arrived
+			transform.localScale = new Vector3(Mathf.Abs(transform.localScale.x), transform.localScale.y, transform.localScale.z); // Reset scale to original
+														 // We've arrived
 			isMoving = false;
 
 			// Play idle animation

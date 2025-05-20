@@ -45,9 +45,9 @@ public class HumanSeatOccupant : MonoBehaviour
 		// Wait until movement ends
 		while (movementController != null && movementController.IsMoving())
 		{
-			// FIXED: More reliable zombie visibility check
-			// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
-			if (zombieHiding != null && !zombieHiding.IsHidden && !zombieHiding.IsHiding)
+			// FIXED: Only check for zombie visibility if it's definitely NOT hidden AND NOT in the process of hiding
+			// This is the key fix - only react if zombie is DEFINITELY exposed (not hidden AND not hiding)
+			if (zombieHiding != null && zombieHiding.IsHidden == false && zombieHiding.IsHiding == false)
 			{
 				// Signal zombie detection and trigger panic
 				HumanScreamingState screamState = GetComponent<HumanScreamingState>();
@@ -173,6 +173,7 @@ public class HumanSeatOccupant : MonoBehaviour
 	{
 		if (OccupiedSeat != null)
 		{
+			Debug.Log($"Human {gameObject.name} leaving seat {OccupiedSeat.name}");
 			OccupiedSeat.occupyingHuman = null;
 		}
 

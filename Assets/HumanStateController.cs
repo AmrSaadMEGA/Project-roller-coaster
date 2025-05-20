@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using Unity.VisualScripting;
 using UnityEngine;
 using static RollerCoasterGameManager;
 
@@ -44,6 +45,7 @@ public class HumanStateController : MonoBehaviour
 	// Add this method to HumanStateController
 	public bool IsDefensive() => currentState == State.Defensive;
 	RollerCoasterGameManager gameManager;
+	public bool IsBeingDespawned { get; set; } // Add this property
 
 	// Add a public getter to access the current state as a string (for debugging)
 	public string CurrentStateAsString => currentState.ToString();
@@ -51,7 +53,7 @@ public class HumanStateController : MonoBehaviour
 	void Awake()
 	{
 		gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
-		animator = GetComponent<Animator>();
+		animator = GetComponentInChildren<Animator>();
 		if (animator == null)
 			Debug.LogError("HumanStateController requires an Animator component.");
 	}
@@ -88,7 +90,9 @@ public class HumanStateController : MonoBehaviour
 			return;
 		}
 		if (currentState == State.Dead)
+		{
 			return;
+		}
 
 		stateTimer -= Time.deltaTime;
 

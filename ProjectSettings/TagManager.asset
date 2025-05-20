@@ -5,6 +5,11 @@ TagManager:
   serializedVersion: 3
   tags:
   - Zombie
+  - clouds
+  - creatures
+  - water
+  - walls
+  - skeletons
   layers:
   - Default
   - TransparentFX

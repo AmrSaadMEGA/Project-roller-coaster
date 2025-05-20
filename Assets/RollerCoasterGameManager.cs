@@ -46,6 +46,13 @@ public class RollerCoasterGameManager : MonoBehaviour
 	private bool boardingCompleted;
 
 	private bool _isLossDuringRide;
+	public enum SpawnDirection { Horizontal, Vertical }
+	public enum SpawnAlignment { Center, LeftRight, TopBottom }
+	[Header("Human Spawning Configuration")]
+	[SerializeField] private SpawnDirection spawnDirection = SpawnDirection.Horizontal;
+	[SerializeField] private SpawnAlignment spawnAlignment = SpawnAlignment.Center;
+	[SerializeField][Range(0, 1)] private float spawnDensity = 0.8f; // 0 = spread out, 1 = tight group
+	[SerializeField] private bool useRandomPositions = true;
 	public bool IsLossDuringRide => _isLossDuringRide; // Expose through property
 	public enum GameState
 	{
@@ -415,48 +422,117 @@ public class RollerCoasterGameManager : MonoBehaviour
 		// Wait a frame to ensure cleanup is complete
 		yield return null;
 
-		// Spawn exactly the number of humans specified
-		spawnedHumans = new List<GameObject>(humansPerRound); // Initialize with capacity
+		float lineLength = gatheringRadius * 2;
+		Vector3 basePosition = humanGatheringPoint.position;
+		bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
 
-		// Spawn humans at gathering point
 		for (int i = 0; i < humansPerRound; i++)
 		{
-			// Calculate random offset within gathering radius
-			Vector2 randomOffset = Random.insideUnitCircle * gatheringRadius;
-			Vector3 spawnPos = humanGatheringPoint.position + new Vector3(randomOffset.x, randomOffset.y, 0);
+			Vector3 spawnPos = CalculateSpawnPosition(i, basePosition, isHorizontal, lineLength);
 
-			// Spawn the human
-			GameObject humanObj = Instantiate(humanPrefab, spawnPos, Quaternion.identity);
-			spawnedHumans.Add(humanObj);
-
-			// Make sure the human has a movement controller
-			if (humanObj.GetComponent<HumanMovementController>() == null)
+			// Add random positional offsets
+			if (useRandomPositions)
 			{
-				humanObj.AddComponent<HumanMovementController>();
+				float posJitter = gatheringRadius * (1 - spawnDensity) * 0.5f;
+				if (isHorizontal)
+				{
+					spawnPos.x += Random.Range(-posJitter, posJitter);
+					spawnPos.y += Random.Range(-0.3f, 0.3f);
+				}
+				else
+				{
+					spawnPos.y += Random.Range(-posJitter, posJitter);
+					spawnPos.x += Random.Range(-0.3f, 0.3f);
+				}
 			}
 
-			// Wait between spawns
-			yield return new WaitForSeconds(humanSpawnInterval);
-		}
+			// Add rotation variation
+			GameObject humanObj = Instantiate(humanPrefab, spawnPos, Quaternion.identity);
+			humanObj.transform.Rotate(0, 0, Random.Range(-5f, 5f));
 
-		// Allow some time for humans to gather
-		yield return new WaitForSeconds(1.5f);
+			// Spawn exactly the number of humans specified
+			spawnedHumans = new List<GameObject>(humansPerRound); // Initialize with capacity
 
-		// Double check our human count matches what we expect
-		if (spawnedHumans.Count > humansPerRound)
-		{
-			Debug.LogWarning($"Too many humans spawned! Expected {humansPerRound}, got {spawnedHumans.Count}. Cleaning up excess.");
-			while (spawnedHumans.Count > humansPerRound)
+			// Spawn humans at gathering point
+			for (int j = 0; j < humansPerRound; j++)
 			{
-				int lastIndex = spawnedHumans.Count - 1;
-				if (spawnedHumans[lastIndex] != null)
+				// Calculate random offset within gathering radius
+				Vector2 randomOffset = Random.insideUnitCircle * gatheringRadius;
+				spawnPos = humanGatheringPoint.position + new Vector3(randomOffset.x, randomOffset.y, 0);
+
+				// Spawn the human
+				GameObject humanObj0 = Instantiate(humanPrefab, spawnPos, Quaternion.identity);
+				spawnedHumans.Add(humanObj);
+
+				// Make sure the human has a movement controller
+				if (humanObj.GetComponent<HumanMovementController>() == null)
 				{
-					Destroy(spawnedHumans[lastIndex]);
+					humanObj.AddComponent<HumanMovementController>();
 				}
-				spawnedHumans.RemoveAt(lastIndex);
+
+				// Wait between spawns
+				yield return new WaitForSeconds(humanSpawnInterval);
+			}
+
+			// Allow some time for humans to gather
+			yield return new WaitForSeconds(1.5f);
+
+			// Double check our human count matches what we expect
+			if (spawnedHumans.Count > humansPerRound)
+			{
+				Debug.LogWarning($"Too many humans spawned! Expected {humansPerRound}, got {spawnedHumans.Count}. Cleaning up excess.");
+				while (spawnedHumans.Count > humansPerRound)
+				{
+					int lastIndex = spawnedHumans.Count - 1;
+					if (spawnedHumans[lastIndex] != null)
+					{
+						Destroy(spawnedHumans[lastIndex]);
+					}
+					spawnedHumans.RemoveAt(lastIndex);
+				}
 			}
 		}
 	}
+	private Vector3 CalculateSpawnPosition(int index, Vector3 basePos, bool isHorizontal, float lineLength)
+	{
+		float spacing = lineLength / Mathf.Max(1, humansPerRound - 1);
+		float densitySpacing = spacing * spawnDensity;
+		float positionOffset = 0;
+
+		// Calculate base offset
+		if (useRandomPositions)
+		{
+			positionOffset = Random.Range(-gatheringRadius, gatheringRadius);
+		}
+		else
+		{
+			positionOffset = -gatheringRadius + (index * densitySpacing);
+		}
+
+		// Apply alignment
+		switch (spawnAlignment)
+		{
+			case SpawnAlignment.LeftRight when isHorizontal:
+			case SpawnAlignment.TopBottom when !isHorizontal:
+				positionOffset = Mathf.Clamp(positionOffset, -gatheringRadius, gatheringRadius);
+				break;
+
+			case SpawnAlignment.Center:
+				positionOffset -= lineLength * 0.5f;
+				break;
+		}
+
+		// Create final position
+		if (isHorizontal)
+		{
+			return basePos + new Vector3(positionOffset, 0, 0);
+		}
+		else
+		{
+			return basePos + new Vector3(0, positionOffset, 0);
+		}
+	}
+
 
 	private IEnumerator BoardHumansOnCoaster()
 	{
@@ -771,66 +847,70 @@ public class RollerCoasterGameManager : MonoBehaviour
 	{
 		if (humanGatheringPoint != null)
 		{
-			// Draw gathering point
-			Gizmos.color = Color.green;
-			Gizmos.DrawWireSphere(humanGatheringPoint.position, gatheringRadius);
+			bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
+			Vector3 lineStart = humanGatheringPoint.position;
+			Vector3 lineEnd = humanGatheringPoint.position;
+			Vector3 size = Vector3.zero;
+
+			// Calculate line dimensions based on direction
+			if (isHorizontal)
+			{
+				lineStart.x -= gatheringRadius;
+				lineEnd.x += gatheringRadius;
+				size = new Vector3(gatheringRadius * 2, 0.6f, 0.1f);
+			}
+			else
+			{
+				lineStart.y -= gatheringRadius;
+				lineEnd.y += gatheringRadius;
+				size = new Vector3(0.6f, gatheringRadius * 2, 0.1f);
+			}
+
+			// Apply alignment offsets
+			switch (spawnAlignment)
+			{
+				case SpawnAlignment.Center:
+					// Already centered
+					break;
+
+				case SpawnAlignment.LeftRight when isHorizontal:
+					lineStart.x = humanGatheringPoint.position.x;
+					lineEnd.x = humanGatheringPoint.position.x + gatheringRadius * 2;
+					size.x = gatheringRadius * 2;
+					break;
+
+				case SpawnAlignment.TopBottom when !isHorizontal:
+					lineStart.y = humanGatheringPoint.position.y;
+					lineEnd.y = humanGatheringPoint.position.y + gatheringRadius * 2;
+					size.y = gatheringRadius * 2;
+					break;
+			}
+
+			// Draw main line
+			Gizmos.color = Color.cyan;
+			Gizmos.DrawLine(lineStart, lineEnd);
+
+			// Draw spawn area box
+			Gizmos.color = new Color(1, 0, 1, 0.15f);
+			Gizmos.DrawCube(humanGatheringPoint.position, size);
 
 			// Label
-			UnityEditor.Handles.color = Color.white;
-			UnityEditor.Handles.Label(humanGatheringPoint.position + Vector3.up * 2f, "Human Gathering Point");
+			string alignmentText = spawnAlignment switch
+			{
+				SpawnAlignment.Center => "Centered",
+				SpawnAlignment.LeftRight => isHorizontal ? "Left to Right" : "Top to Bottom",
+				_ => "Custom"
+			};
+
+			UnityEditor.Handles.Label(humanGatheringPoint.position + Vector3.up * 2f,
+				$"Human Spawn Line\n" +
+				$"Direction: {spawnDirection}\n" +
+				$"Alignment: {alignmentText}\n" +
+				$"Density: {spawnDensity:0.00}\n" +
+				$"Random: {useRandomPositions}");
 		}
 
-		// Visualize cart order when selected
-		if (coasterCarts != null && coasterCarts.Count > 0)
-		{
-			for (int i = 0; i < coasterCarts.Count; i++)
-			{
-				if (coasterCarts[i] != null)
-				{
-					Gizmos.color = (i == 0) ? Color.red : (i == coasterCarts.Count - 1) ? Color.blue : Color.yellow;
-					Gizmos.DrawWireCube(coasterCarts[i].transform.position, new Vector3(2f, 1f, 0.1f));
-
-					UnityEditor.Handles.color = Color.white;
-					UnityEditor.Handles.Label(
-						coasterCarts[i].transform.position + Vector3.up * 1.5f,
-						$"Cart {i} {(i == 0 ? "(Front)" : i == coasterCarts.Count - 1 ? "(Zombie Start)" : "")}"
-					);
-				}
-			}
-		}
-
-		// Show current game state
-		if (Application.isPlaying)
-		{
-			UnityEditor.Handles.color = Color.white;
-			string stateInfo = $"Game State: {currentState}";
-
-			// Add zombie status to the display
-			if (zombieHidingSystem != null)
-			{
-				stateInfo += $" - Zombie: {(zombieHidingSystem.IsHidden ? "Hidden" : "Visible")}";
-			}
-
-			else if (currentState == GameState.WaitingForZombieToHide)
-			{
-				stateInfo += " (Player needs to hide zombie)";
-			}
-
-			// Show scrolling status
-			if (scrollerManager != null)
-			{
-				stateInfo += $" - Scrolling: {(scrollerManager.IsStopped() ? "Stopped" : "Moving")}";
-				if (scrollerManager.IsTransitioning())
-				{
-					stateInfo += " (Transitioning)";
-				}
-			}
-
-			UnityEditor.Handles.Label(
-				Camera.main.ViewportToWorldPoint(new Vector3(0.5f, 0.95f, 10f)),
-				stateInfo
-			);
-		}
-	}
+		// ... rest of existing gizmo code ...
 #endif
+	}
 }
