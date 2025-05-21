@@ -1,8 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 /// <summary>
 /// Attach this script to an empty GameObject. Assign your rail segments
@@ -85,44 +82,4 @@ public class InfiniteRailScroller : MonoBehaviour
 			);
 		}
 	}
-
-#if UNITY_EDITOR
-	// Draw gizmos when this object is selected
-	void OnDrawGizmosSelected()
-	{
-		if (rails == null || rails.Count < 2)
-			return;
-
-		// Draw root point
-		Gizmos.color = Color.yellow;
-		Vector3 root = transform.position;
-		Gizmos.DrawSphere(root, 0.1f);
-		Handles.Label(root, "Scroller Root");
-
-		// Draw startOffset vector
-		Vector3 offsetPos = root + new Vector3(startOffset.x, startOffset.y, 0f);
-		Gizmos.color = Color.cyan;
-		Gizmos.DrawLine(root, offsetPos);
-		Handles.Label(offsetPos, $"Offset ({startOffset.x}, {startOffset.y})");
-
-		// Draw border around each rail
-		Gizmos.color = Color.green;
-		foreach (var rail in rails)
-		{
-			var sr = rail.GetComponent<SpriteRenderer>();
-			if (sr == null) continue;
-
-			Bounds b = sr.bounds;
-			Vector3 tl = new Vector3(b.min.x, b.max.y, b.center.z);
-			Vector3 tr = new Vector3(b.max.x, b.max.y, b.center.z);
-			Vector3 br = new Vector3(b.max.x, b.min.y, b.center.z);
-			Vector3 bl = new Vector3(b.min.x, b.min.y, b.center.z);
-
-			Gizmos.DrawLine(tl, tr);
-			Gizmos.DrawLine(tr, br);
-			Gizmos.DrawLine(br, bl);
-			Gizmos.DrawLine(bl, tl);
-		}
-	}
-#endif
 }

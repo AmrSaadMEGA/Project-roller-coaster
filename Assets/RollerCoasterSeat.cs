@@ -40,15 +40,12 @@ public class RollerCoasterSeat : MonoBehaviour
 			SetZombieOccupation(true); // Mark seat as zombie-occupied
 		}
 	}
-
-	// Visual indicator for debugging - can be removed in final version
-	private void OnDrawGizmos()
+	private void OnTriggerExit2D(Collider2D other)
 	{
-		Gizmos.color = isOccupied ? Color.red : Color.green;
-		Gizmos.DrawSphere(transform.position, 0.2f);
-
-		// Draw seat name for easier debugging
-		UnityEditor.Handles.color = Color.white;
-		UnityEditor.Handles.Label(transform.position + Vector3.up * 0.3f, gameObject.name);
+		if (other.CompareTag("Zombie"))
+		{
+			SetZombieOccupation(false);
+			Debug.Log($"Zombie left seat {name}, cleared occupation.");
+		}
 	}
 }

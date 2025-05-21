@@ -15,7 +15,6 @@ public class ZombieHidingSystem : MonoBehaviour
 	[SerializeField] private float hideMoveDuration = 1.5f;
 	[SerializeField] private string hideAnimationState = "Hiding";
 	[SerializeField] private float hideSpotClickRadius = 1.5f;
-	[SerializeField] private bool showScreenHidingGizmo = true; // Toggle visibility of the screen position gizmo
 
 	[Header("Unhiding")]
 	[SerializeField] private float unhideDelay = 0.5f;
@@ -39,6 +38,8 @@ public class ZombieHidingSystem : MonoBehaviour
 	private bool humansClearing = false; // Flag to track if humans are currently clearing/despawning
 	private Camera mainCamera;
 	private Vector3 hidingPosition; // Cached world position from screen coordinates
+	private RollerCoasterSeat[] allSeats;
+
 
 	// Public access
 	public bool IsHidden => isHidden;
@@ -54,6 +55,8 @@ public class ZombieHidingSystem : MonoBehaviour
 
 	private void Awake()
 	{
+		allSeats = Object.FindObjectsByType<RollerCoasterSeat>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
 		zombieController = GetComponent<ZombieController>();
 		mainCamera = Camera.main;
 
@@ -64,7 +67,7 @@ public class ZombieHidingSystem : MonoBehaviour
 
 		if (gameManager == null)
 		{
-			gameManager = FindObjectOfType<RollerCoasterGameManager>();
+			gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 			if (gameManager == null)
 			{
 				Debug.LogError("ZombieHidingSystem requires a RollerCoasterGameManager reference!");
@@ -74,7 +77,7 @@ public class ZombieHidingSystem : MonoBehaviour
 		// Find rail scroller if not assigned
 		if (railScroller == null)
 		{
-			railScroller = FindObjectOfType<InfiniteRailScroller>();
+			railScroller = FindFirstObjectByType<InfiniteRailScroller>();
 			if (railScroller == null)
 			{
 				Debug.LogError("ZombieHidingSystem requires an InfiniteRailScroller reference!");
@@ -127,11 +130,11 @@ public class ZombieHidingSystem : MonoBehaviour
 	// Update is called once per frame
 	private void Update()
 	{
-		// Update the hiding position every frame if camera or screen changes
 		if (useScreenPositionForHiding && mainCamera != null)
-		{
 			UpdateHidingPosition();
-		}
+
+		Debug.Log($"Zombie State: IsHidden={isHidden}, IsHiding={isHiding}, GameState={gameManager.CurrentState}");
+
 
 		// Modified condition to allow hiding during boarding phase
 		if (!isHiding && !IsRailMoving() &&
@@ -155,7 +158,6 @@ public class ZombieHidingSystem : MonoBehaviour
 				}
 			}
 		}
-
 		// Prevent panic after successful boarding
 		if (gameManager.CurrentState == RollerCoasterGameManager.GameState.ZombieBoarding &&
 			!isHidden && !humansScared)
@@ -188,7 +190,19 @@ public class ZombieHidingSystem : MonoBehaviour
 			}
 		}
 	}
-
+	public void ClearAllZombieSeats()
+	{
+		RollerCoasterSeat[] allSeats = Object.FindObjectsByType<RollerCoasterSeat>(
+			FindObjectsInactive.Include, FindObjectsSortMode.None);
+		foreach (RollerCoasterSeat seat in allSeats)
+		{
+			if (seat != null)
+			{
+				seat.SetZombieOccupation(false);
+				Debug.Log($"Cleared zombie occupation flag for seat: {seat.name}");
+			}
+		}
+	}
 	// Method to check if any humans are panicking
 	private bool AreAnyHumansPanicking()
 	{
@@ -285,7 +299,7 @@ public class ZombieHidingSystem : MonoBehaviour
 		if (movementSystem == null)
 		{
 			// Try to find it in the scene
-			movementSystem = FindObjectOfType<HideSpotMovementSystem>();
+			movementSystem = FindFirstObjectByType<HideSpotMovementSystem>();
 		}
 
 		if (movementSystem != null)
@@ -323,7 +337,6 @@ public class ZombieHidingSystem : MonoBehaviour
 
 	private IEnumerator HideZombieCoroutine()
 	{
-		// Double-check rail is not moving before proceeding
 		if (IsRailMoving())
 		{
 			Debug.Log("Cannot hide while rail is moving!");
@@ -332,51 +345,36 @@ public class ZombieHidingSystem : MonoBehaviour
 
 		isHiding = true;
 
-		// Play hide animation
 		Animator animator = GetComponentInChildren<Animator>();
 		if (animator != null && !string.IsNullOrEmpty(hideAnimationState))
 		{
 			animator.Play(hideAnimationState);
 		}
 
-		// Determine target position based on settings
 		Vector3 targetPosition = useScreenPositionForHiding ? hidingPosition : hideSpot.position;
-
-		// Move to hiding spot
 		Vector3 startPos = transform.position;
 		float elapsedTime = 0f;
 		while (elapsedTime < hideMoveDuration)
 		{
-			// If using hideSpot, get its current position each frame
 			if (!useScreenPositionForHiding)
-			{
 				targetPosition = hideSpot.position;
-			}
-			// If using screen position, update it each frame in case camera moves
 			else
-			{
 				UpdateHidingPosition();
-				targetPosition = hidingPosition;
-			}
 
 			transform.position = Vector3.Lerp(startPos, targetPosition, elapsedTime / hideMoveDuration);
 			elapsedTime += Time.deltaTime;
 			yield return null;
 		}
 
-		// Ensure final position is exact
 		transform.position = targetPosition;
-
-		// If using hideSpot, parent to the hiding spot
 		if (!useScreenPositionForHiding && hideSpot != null)
-		{
 			transform.SetParent(hideSpot);
-		}
 
 		isHiding = false;
 		isHidden = true;
-		humansScared = false; // Reset the flag when zombie hides
-		humansClearing = false; // Reset the humans clearing flag when zombie hides
+		humansScared = false;
+		humansClearing = false;
+		ClearAllZombieSeats(); // Clear all zombie occupation flags
 
 		Debug.Log("Zombie is now hidden!");
 	}
@@ -404,7 +402,7 @@ public class ZombieHidingSystem : MonoBehaviour
 		transform.SetParent(originalParent);
 
 		// Get the last cart (assuming it's the one where zombie should start)
-		RollerCoasterCart[] carts = FindObjectsOfType<RollerCoasterCart>();
+		RollerCoasterCart[] carts = Object.FindObjectsByType<RollerCoasterCart>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 		// Sort carts by position (front to back)
 		System.Array.Sort(carts, (a, b) => b.transform.position.x.CompareTo(a.transform.position.x));
@@ -498,7 +496,7 @@ public class ZombieHidingSystem : MonoBehaviour
 		// Set humans clearing flag so zombie won't unhide during this process
 		humansClearing = true;
 
-		HumanStateController[] humans = FindObjectsOfType<HumanStateController>()
+		HumanStateController[] humans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include, FindObjectsSortMode.None)
 			.Where(h => !h.IsDead() && h.GetComponent<HumanSeatOccupant>()?.IsSeated == false)
 			.ToArray();
 
@@ -613,74 +611,6 @@ public class ZombieHidingSystem : MonoBehaviour
 			// Start the coroutine in the game manager
 			gameManager.StartCoroutine((IEnumerator)spawnMethod.Invoke(gameManager, null));
 			Debug.Log("Respawning humans after they were scared away!");
-		}
-	}
-
-	private void OnDrawGizmos()
-	{
-		// Draw hide spot based on settings
-		if (useScreenPositionForHiding && showScreenHidingGizmo)
-		{
-			// Only show in editor if we have a main camera
-			if (Camera.main != null)
-			{
-				// Convert screen position to world coordinates for visualization
-				Vector3 viewportPos = new Vector3(screenHidingPosition.x, screenHidingPosition.y, screenHidingDepth);
-				Vector3 worldPos = Camera.main.ViewportToWorldPoint(viewportPos);
-
-				Gizmos.color = new Color(1f, 0f, 1f, 0.7f); // Bright magenta
-				Gizmos.DrawWireSphere(worldPos, hideSpotClickRadius);
-
-				// Draw coordinate axis at screen position
-				float axisLength = 0.5f;
-				Gizmos.color = Color.red;
-				Gizmos.DrawLine(worldPos, worldPos + Vector3.right * axisLength);
-				Gizmos.color = Color.green;
-				Gizmos.DrawLine(worldPos, worldPos + Vector3.up * axisLength);
-
-				// Label
-				UnityEditor.Handles.color = Color.white;
-				UnityEditor.Handles.Label(worldPos + Vector3.up * 1f, "Screen Hiding Position");
-			}
-		}
-		else if (hideSpot != null && !useScreenPositionForHiding)
-		{
-			Gizmos.color = Color.magenta;
-			Gizmos.DrawWireSphere(hideSpot.position, hideSpotClickRadius);
-
-			// Label
-			UnityEditor.Handles.color = Color.white;
-			UnityEditor.Handles.Label(hideSpot.position + Vector3.up * 1f, "Zombie Hide Spot");
-		}
-
-		// Show current state when playing
-		if (Application.isPlaying)
-		{
-			string stateText = isHidden ? "Hidden" : (isHiding ? "Hiding/Unhiding" : "Visible");
-
-			// Add rail movement state to the display
-			if (railScroller != null && Mathf.Abs(railScroller.scrollSpeed) > 0.01f)
-			{
-				stateText += " (Rail Moving)";
-			}
-
-			// Add human scared state
-			if (humansScared)
-			{
-				stateText += " (Humans Scared)";
-			}
-
-			// Add humans clearing state
-			if (humansClearing)
-			{
-				stateText += " (Humans Clearing)";
-			}
-
-			// Add hiding method info
-			stateText += useScreenPositionForHiding ? " [Screen Pos]" : " [Transform]";
-
-			UnityEditor.Handles.color = Color.yellow;
-			UnityEditor.Handles.Label(transform.position + Vector3.up * 2f, stateText);
 		}
 	}
 }

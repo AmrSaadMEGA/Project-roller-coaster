@@ -39,7 +39,7 @@ public class HideSpotMovementSystem : MonoBehaviour
 
 		if (scrollerManager == null)
 		{
-			scrollerManager = FindObjectOfType<ScrollerManager>();
+			scrollerManager = FindFirstObjectByType<ScrollerManager>();
 			if (scrollerManager == null)
 			{
 				Debug.LogError("HideSpotMovementSystem needs a reference to the ScrollerManager!");
@@ -50,7 +50,7 @@ public class HideSpotMovementSystem : MonoBehaviour
 
 		if (gameManager == null)
 		{
-			gameManager = FindObjectOfType<RollerCoasterGameManager>();
+			gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 			if (gameManager == null)
 			{
 				Debug.LogError("HideSpotMovementSystem needs a reference to the RollerCoasterGameManager!");
@@ -66,17 +66,14 @@ public class HideSpotMovementSystem : MonoBehaviour
 
 	private void Update()
 	{
-		// Check for game state transitions
 		if (lastGameState != gameManager.CurrentState)
 		{
 			HandleGameStateChange(gameManager.CurrentState);
 			lastGameState = gameManager.CurrentState;
 		}
-		// Sync with rail movement during ride
 		if (gameManager.CurrentState == RollerCoasterGameManager.GameState.RideInProgress)
 		{
 			float currentSpeed = scrollerManager.GetScrollSpeed();
-			// Ignore micro-movements
 			if (Mathf.Abs(currentSpeed) > movementThreshold)
 			{
 				Vector3 newPosition = hideSpot.position;
@@ -84,17 +81,8 @@ public class HideSpotMovementSystem : MonoBehaviour
 				hideSpot.position = newPosition;
 			}
 		}
-		// Only sync with rail movement during active ride
-		if (gameManager.CurrentState == RollerCoasterGameManager.GameState.RideInProgress)
+		else if (!isMoving)
 		{
-			float currentSpeed = scrollerManager.GetScrollSpeed();
-			Vector3 newPosition = hideSpot.position;
-			newPosition.x -= currentSpeed * Time.deltaTime;
-			hideSpot.position = newPosition;
-		}
-		else // Reset position when not riding
-		{
-			// Keep centered unless explicitly moved
 			if (hideSpot.position != centerScreenPosition)
 			{
 				hideSpot.position = centerScreenPosition;
@@ -137,8 +125,21 @@ public class HideSpotMovementSystem : MonoBehaviour
 	}
 	private IEnumerator AnimateRideCompletion()
 	{
-		// Teleport to right first
+		// Get the renderer (assumes hideSpot has one; adjust if it’s a child object)
+		Renderer renderer = hideSpot.GetComponentInChildren<Renderer>();
+		if (renderer != null) renderer.enabled = false;
+
+		// Teleport to offscreen left
+		SetHideSpotPosition(offscreenLeftPosition);
+		yield return null;
+
+		// Teleport to offscreen right
 		SetHideSpotPosition(offscreenRightPosition);
+		yield return null;
+
+		// Re-enable renderer before animation
+		if (renderer != null) renderer.enabled = true;
+
 		// Animate back to center
 		yield return StartCoroutine(MoveHideSpot(offscreenRightPosition, centerScreenPosition));
 	}
@@ -146,6 +147,10 @@ public class HideSpotMovementSystem : MonoBehaviour
 	/// Moves the hide spot from its current position to the center of the screen
 	/// </summary>
 	// Modify the MoveHideSpotToCenter method to ensure proper initialization
+	public void ResetToCenter()
+	{
+		SetHideSpotPosition(centerScreenPosition);
+	}
 	public void MoveHideSpotToCenter()
 	{
 		if (isMoving && movementCoroutine != null)
@@ -244,27 +249,4 @@ public class HideSpotMovementSystem : MonoBehaviour
 	{
 		centerScreenPosition = position;
 	}
-
-#if UNITY_EDITOR
-	private void OnDrawGizmosSelected()
-	{
-		// Draw the three possible positions
-		Gizmos.color = Color.red;
-		Gizmos.DrawWireSphere(offscreenRightPosition, 1f);
-		UnityEditor.Handles.Label(offscreenRightPosition + Vector3.up * 1.5f, "Offscreen Right");
-
-		Gizmos.color = Color.green;
-		Gizmos.DrawWireSphere(centerScreenPosition, 1f);
-		UnityEditor.Handles.Label(centerScreenPosition + Vector3.up * 1.5f, "Center Screen");
-
-		Gizmos.color = Color.blue;
-		Gizmos.DrawWireSphere(offscreenLeftPosition, 1f);
-		UnityEditor.Handles.Label(offscreenLeftPosition + Vector3.up * 1.5f, "Offscreen Left");
-
-		// Draw connection lines
-		Gizmos.color = Color.yellow;
-		Gizmos.DrawLine(offscreenRightPosition, centerScreenPosition);
-		Gizmos.DrawLine(centerScreenPosition, offscreenLeftPosition);
-	}
-#endif
 }

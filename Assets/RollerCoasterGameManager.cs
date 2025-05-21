@@ -17,23 +17,29 @@ public class RollerCoasterGameManager : MonoBehaviour
 	[SerializeField] private ZombieHidingManager zombieHidingManager; // Add this line
 
 	[Header("Humans")]
-	[SerializeField] private GameObject humanPrefab;
+	[SerializeField] private GameObject[] humanPrefabs; // Changed to array for multiple prefabs
 	[SerializeField] private int humansPerRound = 8;
 	[SerializeField] private float humanSpawnInterval = 0.5f;
 	[SerializeField] private float gatheringRadius = 2f;
+	// Add these enums at the top of your class
+	public enum SpawnDirection { Horizontal, Vertical }
+	public enum SpawnAlignment { Center, LeftRight, TopBottom }
+
+	[Header("Human Spawning Configuration")]
+	[SerializeField] private SpawnDirection spawnDirection = SpawnDirection.Horizontal;
+	[SerializeField] private SpawnAlignment spawnAlignment = SpawnAlignment.Center;
+	[SerializeField][Range(0, 1)] private float spawnDensity = 0.8f; // 0 = spread out, 1 = tight group
+	[SerializeField] private bool useRandomPositions = true;
 
 	[Header("Coaster")]
 	[SerializeField] private List<RollerCoasterCart> coasterCarts = new List<RollerCoasterCart>();
 	[SerializeField] private float boardingDelay = 1.5f;
-	[SerializeField] private float boardingDuration = 2f;
 	[SerializeField] private float rideSpeed = 5f;
 	[SerializeField] private float restartDelay = 3f;
 	[SerializeField] private float zombieWaitTime = 2f;
-	[SerializeField] private float waitForZombieHidingTime = 5f;
 
 	// Private variables
 	private List<GameObject> spawnedHumans = new List<GameObject>();
-	private bool zombieInFrontCart = false;
 	private bool allHumansDead = false;
 	private float originalScrollSpeed;
 	private bool zombieSeated = false;
@@ -46,13 +52,6 @@ public class RollerCoasterGameManager : MonoBehaviour
 	private bool boardingCompleted;
 
 	private bool _isLossDuringRide;
-	public enum SpawnDirection { Horizontal, Vertical }
-	public enum SpawnAlignment { Center, LeftRight, TopBottom }
-	[Header("Human Spawning Configuration")]
-	[SerializeField] private SpawnDirection spawnDirection = SpawnDirection.Horizontal;
-	[SerializeField] private SpawnAlignment spawnAlignment = SpawnAlignment.Center;
-	[SerializeField][Range(0, 1)] private float spawnDensity = 0.8f; // 0 = spread out, 1 = tight group
-	[SerializeField] private bool useRandomPositions = true;
 	public bool IsLossDuringRide => _isLossDuringRide; // Expose through property
 	public enum GameState
 	{
@@ -75,6 +74,13 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 	private void Awake()
 	{
+		// Validate human prefabs array
+		if (humanPrefabs == null || humanPrefabs.Length == 0)
+		{
+			Debug.LogError("Assign at least one human prefab in humanPrefabs array!");
+			enabled = false;
+			return;
+		}
 		// Validate required references
 		if (railScroller == null)
 		{
@@ -111,7 +117,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 		if (zombieHidingManager == null)
 		{
-			zombieHidingManager = FindObjectOfType<ZombieHidingManager>();
+			zombieHidingManager = FindFirstObjectByType<ZombieHidingManager>();
 			if (zombieHidingManager == null)
 			{
 				Debug.LogWarning("RollerCoasterGameManager couldn't find ZombieHidingManager - hide spot movement won't be synchronized");
@@ -183,47 +189,77 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 
 
-		// Periodic check for stray humans that aren't in our list
-		if (Time.frameCount % 120 == 0)
+		// Periodic check every 2 seconds
+		if (Time.frameCount % 60 == 0 && currentState == GameState.HumansGathering)
 		{
-			// Clean null entries first
+			// Clean null entries
 			spawnedHumans.RemoveAll(h => h == null);
 
-			// Only count NON-SEATED humans as "actual" for stray detection
-			int trackedCount = spawnedHumans.Count;
-			int actualCount = FindObjectsOfType<HumanStateController>()
-				.Count(h => h != null &&
-						   !h.IsDead() &&
-						   h.GetComponent<HumanSeatOccupant>()?.IsSeated == false);
+			// Count non-seated humans
+			int actualCount = Object.FindObjectsByType<HumanStateController>(
+				FindObjectsInactive.Include,
+				FindObjectsSortMode.None
+			).Count(h => !h.IsDead() &&
+					   h.GetComponent<HumanSeatOccupant>()?.IsSeated == false);
 
+			int trackedCount = spawnedHumans.Count;
+
+			// Handle overcount (stray humans)
 			if (actualCount > trackedCount)
 			{
-				Debug.LogWarning($"Found stray humans: Tracked={trackedCount}, Actual={actualCount}");
-
-				// Only clean up NON-SEATED HUMANS
-				foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+				Debug.Log($"Cleaning {actualCount - trackedCount} stray humans");
+				foreach (HumanStateController human in Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
 				{
-					HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
-					if ((occupant == null || !occupant.IsSeated) &&
-						!spawnedHumans.Contains(human.gameObject))
+					if (!spawnedHumans.Contains(human.gameObject) &&
+						human.GetComponent<HumanSeatOccupant>()?.IsSeated == false)
 					{
-						Debug.Log($"Destroying stray human {human.gameObject.name}");
 						Destroy(human.gameObject);
 					}
 				}
 			}
+			// Handle undercount (missing humans)
+			else if (trackedCount < humansPerRound)
+			{
+				Debug.Log($"Respawning {humansPerRound - trackedCount} missing humans");
+				StartCoroutine(SpawnMissingHumans(humansPerRound - trackedCount));
+			}
+		}
+	}
+	private IEnumerator SpawnMissingHumans(int count)
+	{
+		Vector3 basePosition = humanGatheringPoint.position;
+		bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
+		float lineLength = gatheringRadius * 2;
+
+		for (int i = 0; i < count; i++)
+		{
+			Vector3 spawnPos = CalculateSpawnPosition(spawnedHumans.Count + i,
+				basePosition, isHorizontal, lineLength);
+
+			// Random prefab selection
+			GameObject selectedPrefab = humanPrefabs[Random.Range(0, humanPrefabs.Length)];
+			GameObject humanObj = Instantiate(selectedPrefab, spawnPos, Quaternion.identity);
+
+			// Random facing direction
+			if (Random.value < 0.5f)
+			{
+				Vector3 newScale = humanObj.transform.localScale;
+				newScale.x *= -1;
+				humanObj.transform.localScale = newScale;
+			}
+
+			spawnedHumans.Add(humanObj);
+			yield return new WaitForSeconds(humanSpawnInterval);
 		}
 	}
 	public void ClearAllSeats()
 	{
+		Debug.Log("Clearing all seats...");
 		foreach (RollerCoasterCart cart in coasterCarts)
 		{
 			foreach (RollerCoasterSeat seat in cart.seats)
 			{
-				seat.occupyingHuman = null;
-				seat.SetZombieOccupation(false);
-
-				// Reset human occupant if exists
+				// First check and update the human occupant if exists
 				if (seat.occupyingHuman != null)
 				{
 					HumanSeatOccupant occupant = seat.occupyingHuman.GetComponent<HumanSeatOccupant>();
@@ -232,6 +268,10 @@ public class RollerCoasterGameManager : MonoBehaviour
 						occupant.LeaveSeat();
 					}
 				}
+
+				// Then clear the seat references
+				seat.occupyingHuman = null;
+				seat.SetZombieOccupation(false);
 			}
 		}
 	}
@@ -240,6 +280,20 @@ public class RollerCoasterGameManager : MonoBehaviour
 		boardingCompleted = false;
 		if (gameLoopCoroutine != null) StopCoroutine(gameLoopCoroutine);
 		currentState = GameState.WaitingForZombieToHide;
+
+		// ADDED: Make sure ALL humans scream before running away
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
+				if (screamState != null && !screamState.IsScreaming)
+				{
+					screamState.ScreamAndRunAway(zombie.transform.position, true);
+				}
+			}
+		}
+
 		StartCoroutine(MakeHumansRunAway());
 		gameLoopCoroutine = StartCoroutine(GameLoop());
 	}
@@ -328,6 +382,28 @@ public class RollerCoasterGameManager : MonoBehaviour
 	{
 		isHandlingZombiePresence = true;
 		Debug.Log("Zombie detected during gathering!");
+
+		// MODIFIED: Add explicit screaming triggers for all humans
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				HumanScreamingState screaming = human.GetComponent<HumanScreamingState>();
+				if (screaming != null)
+				{
+					// Force scream and specify the zombie's position as the threat
+					screaming.ScreamAndRunAway(zombie.transform.position, true);
+				}
+
+				// Trigger panic to affect nearby humans
+				HumanStateController state = human.GetComponent<HumanStateController>();
+				if (state != null)
+				{
+					state.TriggerPanicInRadius(7f); // Increased radius for better effect
+				}
+			}
+		}
+
 		yield return StartCoroutine(MakeHumansRunAway());
 		yield return new WaitForSeconds(restartDelay);
 		isHandlingZombiePresence = false;
@@ -338,6 +414,16 @@ public class RollerCoasterGameManager : MonoBehaviour
 	}
 	private IEnumerator MakeHumansRunAway()
 	{
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				// Explicitly allow screaming for intentional fleeing
+				HumanScreamingState screaming = human.GetComponent<HumanScreamingState>();
+				screaming?.ScreamAndRunAway(zombie.transform.position);
+			}
+		}
+
 		Debug.Log("Humans are running away from the visible zombie!");
 
 		List<GameObject> humansToRemove = new List<GameObject>();
@@ -400,99 +486,184 @@ public class RollerCoasterGameManager : MonoBehaviour
 
 		// Additional cleanup for any remaining nulls
 		spawnedHumans.RemoveAll(h => h == null);
+		// Now clear with despawn flag
+		ClearSpawnedHumans();
 	}
 
 
 	private IEnumerator SpawnAndGatherHumans()
 	{
 		Debug.Log("Phase 1: Spawning and gathering humans");
-
-		// Clear any remaining humans from previous rounds
 		ClearSpawnedHumans();
 
-		// Destroy any stray humans that might still be in the scene but not in our list
-		foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
-		{
-			if (human != null && human.gameObject != null)
-			{
-				Destroy(human.gameObject);
-			}
-		}
-
-		// Wait a frame to ensure cleanup is complete
-		yield return null;
-
-		float lineLength = gatheringRadius * 2;
+		// Initial spawn loop - do batch spawning for better performance
 		Vector3 basePosition = humanGatheringPoint.position;
 		bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
+		float lineLength = gatheringRadius * 2;
 
+		// Spawn all humans at once with less delay
 		for (int i = 0; i < humansPerRound; i++)
 		{
+			// Calculate position
 			Vector3 spawnPos = CalculateSpawnPosition(i, basePosition, isHorizontal, lineLength);
 
-			// Add random positional offsets
-			if (useRandomPositions)
+			// Random prefab selection
+			GameObject selectedPrefab = humanPrefabs[Random.Range(0, humanPrefabs.Length)];
+
+			// Spawn the human
+			GameObject humanObj = Instantiate(selectedPrefab, spawnPos, Quaternion.identity);
+
+			// Random facing direction
+			if (Random.value < 0.5f)
 			{
-				float posJitter = gatheringRadius * (1 - spawnDensity) * 0.5f;
-				if (isHorizontal)
-				{
-					spawnPos.x += Random.Range(-posJitter, posJitter);
-					spawnPos.y += Random.Range(-0.3f, 0.3f);
-				}
-				else
-				{
-					spawnPos.y += Random.Range(-posJitter, posJitter);
-					spawnPos.x += Random.Range(-0.3f, 0.3f);
-				}
+				Vector3 newScale = humanObj.transform.localScale;
+				newScale.x *= -1;
+				humanObj.transform.localScale = newScale;
 			}
 
-			// Add rotation variation
-			GameObject humanObj = Instantiate(humanPrefab, spawnPos, Quaternion.identity);
-			humanObj.transform.Rotate(0, 0, Random.Range(-5f, 5f));
+			spawnedHumans.Add(humanObj);
 
-			// Spawn exactly the number of humans specified
-			spawnedHumans = new List<GameObject>(humansPerRound); // Initialize with capacity
-
-			// Spawn humans at gathering point
-			for (int j = 0; j < humansPerRound; j++)
+			// Make sure the human has a movement controller
+			if (humanObj.GetComponent<HumanMovementController>() == null)
 			{
-				// Calculate random offset within gathering radius
-				Vector2 randomOffset = Random.insideUnitCircle * gatheringRadius;
-				spawnPos = humanGatheringPoint.position + new Vector3(randomOffset.x, randomOffset.y, 0);
+				humanObj.AddComponent<HumanMovementController>();
+			}
 
-				// Spawn the human
-				GameObject humanObj0 = Instantiate(humanPrefab, spawnPos, Quaternion.identity);
-				spawnedHumans.Add(humanObj);
-
-				// Make sure the human has a movement controller
-				if (humanObj.GetComponent<HumanMovementController>() == null)
-				{
-					humanObj.AddComponent<HumanMovementController>();
-				}
-
-				// Wait between spawns
+			// Only yield every 3 humans for faster spawning
+			if (i % 3 == 0)
 				yield return new WaitForSeconds(humanSpawnInterval);
-			}
+		}
 
-			// Allow some time for humans to gather
-			yield return new WaitForSeconds(1.5f);
+		// Final cleanup - to handle any stray humans
+		spawnedHumans.RemoveAll(h => h == null);
 
-			// Double check our human count matches what we expect
-			if (spawnedHumans.Count > humansPerRound)
+		// Add an explicit cleanup step to remove any excess humans
+		int humanCount = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+		if (humanCount > humansPerRound)
+		{
+			Debug.Log($"Cleaning up {humanCount - humansPerRound} excess humans");
+			HumanStateController[] allHumans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+			foreach (HumanStateController human in allHumans)
 			{
-				Debug.LogWarning($"Too many humans spawned! Expected {humansPerRound}, got {spawnedHumans.Count}. Cleaning up excess.");
-				while (spawnedHumans.Count > humansPerRound)
+				if (!spawnedHumans.Contains(human.gameObject))
 				{
-					int lastIndex = spawnedHumans.Count - 1;
-					if (spawnedHumans[lastIndex] != null)
-					{
-						Destroy(spawnedHumans[lastIndex]);
-					}
-					spawnedHumans.RemoveAt(lastIndex);
+					Destroy(human.gameObject);
 				}
 			}
 		}
+
+		// Shorter wait time before proceeding
+		yield return new WaitForSeconds(0.5f);
 	}
+
+	private IEnumerator CleanupUnboardedHumans()
+	{
+		// Wait a short time for boarding to start
+		yield return new WaitForSeconds(1.0f);
+
+		// Find and clean all unboarded humans - this is a more aggressive approach
+		List<GameObject> humansToRemove = new List<GameObject>();
+
+		// APPROACH #1: Get all humans that aren't going to be seated
+		HumanStateController[] allHumans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include,FindObjectsSortMode.None);
+
+		// First count how many seats we're using
+		int availableSeatCount = 0;
+		for (int i = 0; i < coasterCarts.Count - 1; i++) // Skip last cart (reserved for zombie)
+		{
+			availableSeatCount += coasterCarts[i].seats.Length;
+		}
+
+		// Get list of humans assigned to seats (these should be kept)
+		List<GameObject> seatedOrBoardingHumans = new List<GameObject>();
+		foreach (RollerCoasterCart cart in coasterCarts)
+		{
+			foreach (RollerCoasterSeat seat in cart.seats)
+			{
+				if (seat.occupyingHuman != null)
+				{
+					seatedOrBoardingHumans.Add(seat.occupyingHuman.gameObject);
+				}
+			}
+		}
+
+		// Also get humans that are in the process of boarding
+		foreach (GameObject human in spawnedHumans)
+		{
+			if (human != null)
+			{
+				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+				if (occupant != null && occupant.AssignedSeat != null)
+				{
+					seatedOrBoardingHumans.Add(human);
+				}
+			}
+		}
+
+		// Find humans to remove (any human not in seated/boarding list)
+		foreach (HumanStateController human in allHumans)
+		{
+			if (human != null && !seatedOrBoardingHumans.Contains(human.gameObject))
+			{
+				// Double check this isn't a human with a seat assignment
+				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+				if (occupant == null || occupant.AssignedSeat == null)
+				{
+					humansToRemove.Add(human.gameObject);
+				}
+			}
+		}
+
+		// Clean up any excess humans
+		if (humansToRemove.Count > 0)
+		{
+			Debug.Log($"Cleaning up {humansToRemove.Count} unboarded humans");
+			foreach (GameObject human in humansToRemove)
+			{
+				if (human != null)
+				{
+					// Remove from spawnedHumans if it's there
+					if (spawnedHumans.Contains(human))
+					{
+						spawnedHumans.Remove(human);
+					}
+					Destroy(human);
+				}
+			}
+		}
+
+		// Perform a second cleanup after a delay to catch any stragglers
+		yield return new WaitForSeconds(2.0f);
+
+		// Find any humans that aren't seated after the boarding process
+		HumanStateController[] remainingHumans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include,FindObjectsSortMode.None);
+		int cleanedUp = 0;
+
+		foreach (HumanStateController human in remainingHumans)
+		{
+			if (human != null)
+			{
+				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
+				// If not seated and not in a cart, remove it
+				if (occupant == null || !occupant.IsSeated)
+				{
+					// Remove from spawnedHumans if it's there
+					if (spawnedHumans.Contains(human.gameObject))
+					{
+						spawnedHumans.Remove(human.gameObject);
+					}
+					Destroy(human.gameObject);
+					cleanedUp++;
+				}
+			}
+		}
+
+		if (cleanedUp > 0)
+		{
+			Debug.Log($"Second cleanup pass removed {cleanedUp} stray humans");
+		}
+	}
+
 	private Vector3 CalculateSpawnPosition(int index, Vector3 basePos, bool isHorizontal, float lineLength)
 	{
 		float spacing = lineLength / Mathf.Max(1, humansPerRound - 1);
@@ -533,34 +704,78 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 	}
 
-
 	private IEnumerator BoardHumansOnCoaster()
 	{
 		boardingCompleted = false;
 		Debug.Log("Phase 2: Boarding humans on coaster");
-
+		// Do an initial cleanup of any stray humans before boarding
+		HumanStateController[] initialHumans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include,FindObjectsSortMode.None);
+		foreach (HumanStateController human in initialHumans)
+		{
+			if (human != null && !spawnedHumans.Contains(human.gameObject))
+			{
+				Destroy(human.gameObject);
+			}
+		}
 		// FIXED: More reliable zombie visibility check
 		// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
 		if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
 		{
 			Debug.LogWarning("Zombie is visible! Canceling boarding.");
+
+			// ADDED: Make humans scream before handling failure
+			foreach (GameObject human in spawnedHumans)
+			{
+				if (human != null)
+				{
+					HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
+					if (screamState != null)
+					{
+						screamState.ScreamAndRunAway(zombie.transform.position, true);
+					}
+				}
+			}
+
 			HandleBoardingFailure();
 			yield break;
 		}
 
-		// Double-check we have the correct number of humans
-		int humanCount = spawnedHumans.Count;
-		int actualHumanCount = FindObjectsOfType<HumanStateController>().Length;
-		if (humanCount != actualHumanCount)
+		// Double-check human count
+		spawnedHumans.RemoveAll(h => h == null);
+		int needed = humansPerRound - spawnedHumans.Count;
+		if (needed != 0)
 		{
-			Debug.LogWarning($"Human count mismatch! Tracked: {humanCount}, Actual: {actualHumanCount}. Cleaning up before boarding.");
-			ClearSpawnedHumans();
-			yield return StartCoroutine(SpawnAndGatherHumans());
+			Debug.Log($"Adjusting human count from {spawnedHumans.Count} to {humansPerRound}");
+
+			// Remove excess
+			while (spawnedHumans.Count > humansPerRound)
+			{
+				GameObject human = spawnedHumans.Last();
+				if (human != null) Destroy(human);
+				spawnedHumans.RemoveAt(spawnedHumans.Count - 1);
+			}
+
+			// Spawn missing
+			if (needed > 0)
+			{
+				Vector3 basePosition = humanGatheringPoint.position;
+				bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
+				float lineLength = gatheringRadius * 2;
+
+				for (int i = 0; i < needed; i++)
+				{
+					Vector3 spawnPos = CalculateSpawnPosition(spawnedHumans.Count + i,
+						basePosition, isHorizontal, lineLength);
+					GameObject selectedPrefab = humanPrefabs[Random.Range(0, humanPrefabs.Length)];
+					GameObject humanObj0 = Instantiate(selectedPrefab, spawnPos, Quaternion.identity);
+					spawnedHumans.Add(humanObj0);
+					yield return new WaitForSeconds(humanSpawnInterval);
+				}
+			}
 		}
 
 		// Short delay before boarding
 		yield return new WaitForSeconds(boardingDelay);
-
 		// FIXED: More reliable zombie visibility check
 		// Only react if zombie is DEFINITELY visible (not hidden AND not in the process of hiding)
 		if (!zombieHidingSystem.IsHidden && !zombieHidingSystem.IsHiding)
@@ -585,7 +800,6 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 
 		// List to track which seats are filled
-		// Get all available seats across all carts except the last one
 		List<RollerCoasterSeat> availableSeats = new List<RollerCoasterSeat>();
 		for (int i = 0; i < coasterCarts.Count - 1; i++)
 		{
@@ -606,6 +820,18 @@ public class RollerCoasterGameManager : MonoBehaviour
 			if (occupant != null)
 			{
 				occupant.AssignSeat(seat); // This starts movement
+			}
+		}
+		for (int i = seatsToFill; i < spawnedHumans.Count; i++)
+		{
+			if (spawnedHumans[i] != null)
+			{
+				// Mark these for destruction in next cleanup
+				HumanStateController controller = spawnedHumans[i].GetComponent<HumanStateController>();
+				if (controller != null)
+				{
+					controller.IsBeingDespawned = true;
+				}
 			}
 		}
 
@@ -650,8 +876,9 @@ public class RollerCoasterGameManager : MonoBehaviour
 		}
 
 		// Stop the visibility check coroutine
-		StopCoroutine(zombieCheckCoroutine);
-
+		if (zombieCheckCoroutine != null)
+			StopCoroutine(zombieCheckCoroutine);
+		StartCoroutine(CleanupUnboardedHumans());
 		boardingCompleted = true;
 		Debug.Log("All humans seated. Starting zombie boarding phase.");
 		currentState = GameState.ZombieBoarding;
@@ -666,19 +893,24 @@ public class RollerCoasterGameManager : MonoBehaviour
 			{
 				Debug.Log("Zombie became visible during boarding - triggering human panic!");
 
-				// Force all moving humans to immediately react
+				// MODIFIED: Force ALL humans to scream, not just moving ones
 				foreach (GameObject human in spawnedHumans)
 				{
 					if (human == null) continue;
 
-					HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
-					if (occupant != null && !occupant.IsSeated)
+					// Get screaming component and force scream
+					HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
+					if (screamState != null)
 					{
-						HumanScreamingState screamState = human.GetComponent<HumanScreamingState>();
-						if (screamState != null)
-						{
-							screamState.ScreamAndRunAway(zombieHidingSystem.transform.position, true);
-						}
+						// Force immediate scream with forceScream=true
+						screamState.ScreamAndRunAway(zombieHidingSystem.transform.position, true);
+					}
+
+					// Also trigger panic to spread the effect
+					HumanStateController stateController = human.GetComponent<HumanStateController>();
+					if (stateController != null)
+					{
+						stateController.TriggerPanicInRadius(5f);
 					}
 				}
 
@@ -727,7 +959,7 @@ public class RollerCoasterGameManager : MonoBehaviour
 		_isLossDuringRide = (currentState == GameState.RideInProgress);
 
 		// Reset hunger system
-		ZombieHungerSystem hungerSystem = FindObjectOfType<ZombieHungerSystem>();
+		ZombieHungerSystem hungerSystem = FindFirstObjectByType<ZombieHungerSystem>();
 		hungerSystem.ResetHungerSystem();
 
 		// Move the hiding spot from offscreen right to center
@@ -755,7 +987,6 @@ public class RollerCoasterGameManager : MonoBehaviour
 		scrollerManager.StartScrolling(rideSpeed);
 
 		// Reset ride completion flags
-		zombieInFrontCart = false;
 		allHumansDead = false;
 	}
 
@@ -786,13 +1017,11 @@ public class RollerCoasterGameManager : MonoBehaviour
 				yield return null;
 			}
 		}
-
-		RestartGame();
 	}
 	private void CheckHumansStatus()
 	{
 		// Find all ACTIVE humans (ignore destroyed ones)
-		HumanStateController[] humans = FindObjectsOfType<HumanStateController>()
+		HumanStateController[] humans = Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include,FindObjectsSortMode.None)
 			.Where(h => h.gameObject.activeInHierarchy)
 			.ToArray();
 
@@ -818,99 +1047,26 @@ public class RollerCoasterGameManager : MonoBehaviour
 		{
 			if (human != null)
 			{
+				// Set despawn flag
+				HumanStateController state = human.GetComponent<HumanStateController>();
+				if (state != null) state.IsBeingDespawned = true;
+
 				// Force leave seat before destruction
 				HumanSeatOccupant occupant = human.GetComponent<HumanSeatOccupant>();
-				if (occupant != null)
-				{
-					occupant.LeaveSeat();
-				}
+				if (occupant != null) occupant.LeaveSeat();
+
 				Destroy(human);
 			}
 		}
 		spawnedHumans.Clear();
 
 		// Cleanup any remaining humans in the scene
-		foreach (HumanStateController human in FindObjectsOfType<HumanStateController>())
+		foreach (HumanStateController human in Object.FindObjectsByType<HumanStateController>(FindObjectsInactive.Include,FindObjectsSortMode.None))
 		{
 			if (human != null && !spawnedHumans.Contains(human.gameObject))
 			{
 				Destroy(human.gameObject);
 			}
 		}
-	}
-	public void RestartGame()
-	{
-	}
-	// For visualization in the editor
-#if UNITY_EDITOR
-	private void OnDrawGizmos()
-	{
-		if (humanGatheringPoint != null)
-		{
-			bool isHorizontal = spawnDirection == SpawnDirection.Horizontal;
-			Vector3 lineStart = humanGatheringPoint.position;
-			Vector3 lineEnd = humanGatheringPoint.position;
-			Vector3 size = Vector3.zero;
-
-			// Calculate line dimensions based on direction
-			if (isHorizontal)
-			{
-				lineStart.x -= gatheringRadius;
-				lineEnd.x += gatheringRadius;
-				size = new Vector3(gatheringRadius * 2, 0.6f, 0.1f);
-			}
-			else
-			{
-				lineStart.y -= gatheringRadius;
-				lineEnd.y += gatheringRadius;
-				size = new Vector3(0.6f, gatheringRadius * 2, 0.1f);
-			}
-
-			// Apply alignment offsets
-			switch (spawnAlignment)
-			{
-				case SpawnAlignment.Center:
-					// Already centered
-					break;
-
-				case SpawnAlignment.LeftRight when isHorizontal:
-					lineStart.x = humanGatheringPoint.position.x;
-					lineEnd.x = humanGatheringPoint.position.x + gatheringRadius * 2;
-					size.x = gatheringRadius * 2;
-					break;
-
-				case SpawnAlignment.TopBottom when !isHorizontal:
-					lineStart.y = humanGatheringPoint.position.y;
-					lineEnd.y = humanGatheringPoint.position.y + gatheringRadius * 2;
-					size.y = gatheringRadius * 2;
-					break;
-			}
-
-			// Draw main line
-			Gizmos.color = Color.cyan;
-			Gizmos.DrawLine(lineStart, lineEnd);
-
-			// Draw spawn area box
-			Gizmos.color = new Color(1, 0, 1, 0.15f);
-			Gizmos.DrawCube(humanGatheringPoint.position, size);
-
-			// Label
-			string alignmentText = spawnAlignment switch
-			{
-				SpawnAlignment.Center => "Centered",
-				SpawnAlignment.LeftRight => isHorizontal ? "Left to Right" : "Top to Bottom",
-				_ => "Custom"
-			};
-
-			UnityEditor.Handles.Label(humanGatheringPoint.position + Vector3.up * 2f,
-				$"Human Spawn Line\n" +
-				$"Direction: {spawnDirection}\n" +
-				$"Alignment: {alignmentText}\n" +
-				$"Density: {spawnDensity:0.00}\n" +
-				$"Random: {useRandomPositions}");
-		}
-
-		// ... rest of existing gizmo code ...
-#endif
 	}
 }

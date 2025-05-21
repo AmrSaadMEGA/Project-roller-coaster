@@ -73,7 +73,7 @@ public class HumanStateController : MonoBehaviour
 		{
 			gameObject.AddComponent<DeadHumanThrower>();
 		}
-		zombie = FindObjectOfType<ZombieController>(); // Single FindObjectOfType call
+		zombie = FindFirstObjectByType<ZombieController>(); // Single FindObjectOfType call
 
 		// Start zombie check immediately if starting in vulnerable state
 		if (currentState == State.Vulnerable && !isCheckingForZombie)
@@ -309,7 +309,7 @@ public class HumanStateController : MonoBehaviour
 	public bool IsOnRide()
 	{
 		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
-		var gameManager = FindObjectOfType<RollerCoasterGameManager>();
+		var gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 
 		return occupant != null && occupant.IsSeated &&
 			   gameManager != null &&

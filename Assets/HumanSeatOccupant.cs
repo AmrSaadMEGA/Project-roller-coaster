@@ -1,6 +1,5 @@
-// Modify HumanSeatOccupant.cs to track the assigned seat before occupation
-
 using UnityEngine;
+using System.Collections;
 
 public class HumanSeatOccupant : MonoBehaviour
 {
@@ -38,77 +37,62 @@ public class HumanSeatOccupant : MonoBehaviour
 		StartCoroutine(CheckForArrival());
 	}
 
-	private System.Collections.IEnumerator CheckForArrival()
+	private IEnumerator CheckForArrival()
 	{
-		ZombieHidingSystem zombieHiding = FindObjectOfType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
-
-		// Wait until movement ends
+		ZombieHidingSystem zombieHiding = FindFirstObjectByType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
 		while (movementController != null && movementController.IsMoving())
 		{
-			// FIXED: Only check for zombie visibility if it's definitely NOT hidden AND NOT in the process of hiding
-			// This is the key fix - only react if zombie is DEFINITELY exposed (not hidden AND not hiding)
-			if (zombieHiding != null && zombieHiding.IsHidden == false && zombieHiding.IsHiding == false)
+			Debug.Log($"Human {gameObject.name} moving to seat. Zombie Hidden={zombieHiding?.IsHidden}, Hiding={zombieHiding?.IsHiding}, SeatOccupiedByZombie={AssignedSeat?.IsOccupiedByZombie}");
+			// Only panic if zombie is visible (not hidden AND not hiding)
+			if (zombieHiding != null && !zombieHiding.IsHidden && !zombieHiding.IsHiding)
 			{
-				// Signal zombie detection and trigger panic
 				HumanScreamingState screamState = GetComponent<HumanScreamingState>();
 				if (screamState != null)
 				{
-					// Get zombie position for direction awareness
-					Transform zombieTransform = zombieHiding.transform;
-					screamState.ScreamAndRunAway(zombieTransform.position, true);
+					screamState.ScreamAndRunAway(zombieHiding.transform.position, true);
+					AssignedSeat = null;
+					yield break;
 				}
 				else
 				{
-					// Fallback if no ScreamingState component
 					movementController.StopMoving();
 					Vector3 awayDir = (zombieHiding != null) ?
 						(transform.position - zombieHiding.transform.position).normalized :
-						new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), 0).normalized;
+						Random.insideUnitCircle.normalized;
 					Vector3 fleeTarget = transform.position + awayDir * 10f;
 					movementController.SetDestination(fleeTarget);
 				}
 
-				// Trigger panic in nearby humans as well
 				HumanStateController stateController = GetComponent<HumanStateController>();
 				if (stateController != null)
-				{
 					stateController.TriggerPanicInRadius(5f);
-				}
 
-				// Clear assigned seat since we're fleeing
 				AssignedSeat = null;
 				yield break;
 			}
 
-			// Original seat-specific check (keep this too)
-			if (AssignedSeat != null && AssignedSeat.IsOccupiedByZombie)
+			// Only panic if seat is occupied by a VISIBLE zombie
+			if (AssignedSeat != null && AssignedSeat.IsOccupiedByZombie &&
+				zombieHiding != null && !zombieHiding.IsHidden && !zombieHiding.IsHiding)
 			{
-				Debug.Log($"Human {gameObject.name} detected zombie took their assigned seat during movement!");
-
-				// Signal zombie detection and trigger panic
+				Debug.Log($"Human {gameObject.name} detected zombie in seat during movement!");
 				HumanScreamingState screamState = GetComponent<HumanScreamingState>();
 				if (screamState != null)
 				{
-					// Use true parameter to indicate this is a critical reaction (seat stolen)
 					screamState.ScreamAndRunAway(AssignedSeat.transform.position, true);
 				}
 				else
 				{
-					// Fallback if no ScreamingState component
 					movementController.StopMoving();
 					Vector3 awayDir = (transform.position - AssignedSeat.transform.position).normalized;
 					Vector3 fleeTarget = transform.position + awayDir * 10f;
 					movementController.SetDestination(fleeTarget);
 				}
 
-				// Trigger panic in nearby humans as well
 				HumanStateController stateController = GetComponent<HumanStateController>();
 				if (stateController != null)
-				{
 					stateController.TriggerPanicInRadius(5f);
-				}
 
-				// Clear assigned seat since it's now taken by zombie
 				AssignedSeat = null;
 				yield break;
 			}
@@ -116,11 +100,8 @@ public class HumanSeatOccupant : MonoBehaviour
 			yield return null;
 		}
 
-		// Only occupy if we've actually reached the destination and the seat isn't zombie-occupied
-		if (movementController != null &&
-			movementController.HasReachedDestination() &&
-			AssignedSeat != null &&
-			!AssignedSeat.IsOccupiedByZombie)
+		if (movementController != null && movementController.HasReachedDestination() &&
+			AssignedSeat != null && !AssignedSeat.IsOccupiedByZombie)
 		{
 			OccupySeat();
 		}
@@ -130,12 +111,18 @@ public class HumanSeatOccupant : MonoBehaviour
 		}
 	}
 
+
 	// Change 2: Add a method to check for zombie in assigned seat
 	// Add this method to the HumanSeatOccupant class:
 
 	public bool CheckForZombieInAssignedSeat()
 	{
-		if (AssignedSeat == null || !AssignedSeat.IsOccupiedByZombie)
+		ZombieHidingSystem zombieHiding = FindFirstObjectByType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
+
+		// Only consider the seat occupied by a zombie if the zombie is visible (not hidden)
+		if (AssignedSeat == null ||
+			!AssignedSeat.IsOccupiedByZombie ||
+			(zombieHiding != null && (zombieHiding.IsHidden || zombieHiding.IsHiding)))
 			return false;
 
 		Debug.Log($"Human {gameObject.name} detected zombie in their assigned seat!");
@@ -151,19 +138,45 @@ public class HumanSeatOccupant : MonoBehaviour
 		AssignedSeat = null;
 		return true;
 	}
+
 	private void OccupySeat()
 	{
-		if (AssignedSeat == null) return;
+		if (AssignedSeat == null || AssignedSeat.isOccupied) return;
 
-		// Set references
+		ZombieHidingSystem zombieHiding = FindFirstObjectByType<ZombieController>()?.GetComponent<ZombieHidingSystem>();
+		if (AssignedSeat.IsOccupiedByZombie && zombieHiding != null && !zombieHiding.IsHidden && !zombieHiding.IsHiding)
+		{
+			Debug.Log($"Human {gameObject.name} tried to occupy seat with visible zombie - aborting!");
+			HumanScreamingState screamState0 = GetComponent<HumanScreamingState>();
+			if (screamState0 != null)
+				screamState0.ScreamAndRunAway(AssignedSeat.transform.position, true);
+			AssignedSeat = null;
+			return;
+		}
+
 		OccupiedSeat = AssignedSeat;
 		OccupiedSeat.occupyingHuman = GetComponent<HumanStateController>();
-
-		// Set seated status
 		IsSeated = true;
-
-		// Move to exact position of the seat
 		transform.position = OccupiedSeat.transform.position;
+
+		// Reset screaming state
+		HumanScreamingState screamState = GetComponent<HumanScreamingState>();
+		if (screamState != null)
+		{
+			screamState.StopAllCoroutines();
+			screamState.IsScreaming = false;
+		}
+		HumanMovementController movement = GetComponent<HumanMovementController>();
+		if (movement != null)
+		{
+			movement.StopMoving();
+		}
+
+		Animator animator = GetComponent<Animator>();
+		if (animator != null)
+		{
+			animator.Play("Idle"); // Reset to seated/idle animation
+		}
 
 		Debug.Log($"Human {gameObject.name} occupied seat {OccupiedSeat.name}");
 	}

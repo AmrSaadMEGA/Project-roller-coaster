@@ -21,7 +21,7 @@ public class HumanScreamingState : MonoBehaviour
 	[SerializeField] private string jumpStateName = "Jump";
 	[SerializeField] private float jumpHeight = 2f;
 	[SerializeField] private float jumpDuration = 0.5f;
-	public bool IsScreaming { get; private set; }
+	public bool IsScreaming { get; set; }
 	public void ForceJumpAndDespawn()
 	{
 		StopAllCoroutines();
@@ -72,6 +72,14 @@ public class HumanScreamingState : MonoBehaviour
 	private System.Collections.IEnumerator JumpSequence()
 	{
 		IsScreaming = true;
+		if(transform.tag == "Male")
+		{
+			AudioHandler.instance.Play("Man Jump");
+		}
+		else if (transform.tag == "Female")
+		{
+			AudioHandler.instance.Play("Woman Jump");
+		}
 		animator.Play(jumpStateName);
 
 		// Disable collider to prevent further interactions
@@ -128,16 +136,18 @@ public class HumanScreamingState : MonoBehaviour
 	public void ScreamAndRunAway(Vector3 threatPosition, bool forceReact = false)
 	{
 		HumanStateController state = GetComponent<HumanStateController>();
+		HumanSeatOccupant occupant = GetComponent<HumanSeatOccupant>();
 
-		// Prevent reaction if being despawned
 		if (state != null && state.IsBeingDespawned) return;
 		if ((IsScreaming && !forceReact) ||
 			stateController.IsDead() ||
-			FindObjectOfType<RollerCoasterGameManager>().BoardingCompleted)
+			(occupant != null && occupant.IsSeated)) // Add seated check
+		{
 			return;
+		}
 
 		StopAllCoroutines();
-		StartCoroutine(ScreamAndRunSequence(stateController.transform.position));
+		StartCoroutine(ScreamAndRunSequence(threatPosition));
 	}
 
 	private System.Collections.IEnumerator ScreamAndRunSequence(Vector3 scareSource)
@@ -148,6 +158,14 @@ public class HumanScreamingState : MonoBehaviour
 		if (animator != null)
 		{
 			animator.Play(screamingStateName);
+			if (transform.tag == "Male")
+			{
+				AudioHandler.instance.Play("Man Scream");
+			}
+			else if (transform.tag == "Female")
+			{
+				AudioHandler.instance.Play("Woman Scream");
+			}
 		}
 
 		// Wait for scream animation duration (extended)

@@ -29,7 +29,7 @@ public class ZombieHidingManager : MonoBehaviour
 		// Find references if not assigned
 		if (zombieHidingSystem == null)
 		{
-			zombieHidingSystem = FindObjectOfType<ZombieHidingSystem>();
+			zombieHidingSystem = FindFirstObjectByType<ZombieHidingSystem>();
 			if (zombieHidingSystem == null)
 			{
 				Debug.LogError("ZombieHidingManager needs a reference to ZombieHidingSystem!");
@@ -49,7 +49,7 @@ public class ZombieHidingManager : MonoBehaviour
 
 		if (gameManager == null)
 		{
-			gameManager = FindObjectOfType<RollerCoasterGameManager>();
+			gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 			if (gameManager == null)
 			{
 				Debug.LogError("ZombieHidingManager needs a reference to RollerCoasterGameManager!");
@@ -60,7 +60,7 @@ public class ZombieHidingManager : MonoBehaviour
 
 		if (scrollerManager == null)
 		{
-			scrollerManager = FindObjectOfType<ScrollerManager>();
+			scrollerManager = FindFirstObjectByType<ScrollerManager>();
 			if (scrollerManager == null)
 			{
 				Debug.LogError("ZombieHidingManager needs a reference to ScrollerManager!");
@@ -223,22 +223,4 @@ public class ZombieHidingManager : MonoBehaviour
 			hideSpotMovementSystem.MoveHideSpotOffscreenLeft();
 		}
 	}
-
-#if UNITY_EDITOR
-	private void OnDrawGizmosSelected()
-	{
-		if (hideSpot != null)
-		{
-			// Draw the current hide spot position
-			Gizmos.color = Color.magenta;
-			Gizmos.DrawWireSphere(hideSpot.position, 1.2f);
-			UnityEditor.Handles.Label(hideSpot.position + Vector3.up * 2f, "Current Hide Spot Position");
-
-			// Draw the default hide position
-			Gizmos.color = Color.cyan;
-			Gizmos.DrawWireSphere(defaultHidePosition, 0.8f);
-			UnityEditor.Handles.Label(defaultHidePosition + Vector3.up * 1.5f, "Default Hide Position");
-		}
-	}
-#endif
 }

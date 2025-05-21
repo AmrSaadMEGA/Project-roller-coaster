@@ -29,6 +29,7 @@ public class ZombieController : MonoBehaviour
 
 	private Animator animator;
 	private HumanStateController targetHuman;
+	private bool isEating = false;
 	private bool isMovingBetweenSeats = false;
 	private bool isThrowing = false;
 
@@ -36,9 +37,16 @@ public class ZombieController : MonoBehaviour
 	[SerializeField] private bool debugMode = true;
 
 	[SerializeField] private ZombieHidingSystem hidingSystem;
+	private RollerCoasterSeat[] allSeats;
+
 
 	void Awake()
 	{
+		RollerCoasterSeat[] allSeats = Object.FindObjectsByType<RollerCoasterSeat>(
+			FindObjectsInactive.Include,
+			FindObjectsSortMode.None
+		);
+
 		hidingSystem = GetComponent<ZombieHidingSystem>();
 		animator = GetComponentInChildren<Animator>();
 		if (animator == null)
@@ -62,69 +70,88 @@ public class ZombieController : MonoBehaviour
 
 	void Update()
 	{
-		if (isMovingBetweenSeats || isThrowing)
+		if (isEating)
 			return;
-
+		// Handle mouse input
 		if (Input.GetMouseButtonDown(0))
 		{
-			// Get mouse position in world space
-			Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+			Vector2 inputPosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+			ProcessInput(inputPosition);
+		}
 
-			if (debugMode)
-				Debug.Log($"Mouse clicked at position: {mousePosition}");
-
-			if (hidingSystem != null && hidingSystem.IsHidden)
+		// Handle touch input
+		if (Input.touchCount > 0)
+		{
+			Touch touch = Input.GetTouch(0);
+			if (touch.phase == TouchPhase.Began)
 			{
-				if (TryUnhideToSeat(mousePosition))
-				{
-					if (debugMode)
-						Debug.Log("Unhiding via seat click");
-					return;
-				}
-			}
-			else
-			{
-
-				// First, prioritize attacking vulnerable humans directly in front of the zombie
-				if (TryEatHuman(mousePosition))
-				{
-					if (debugMode)
-						Debug.Log("Successfully found human to eat");
-					return;
-				}
-
-				// Next check if we're clicking on an adjacent seat in the same cart
-				if (TrySwitchToClickedSeat(mousePosition))
-				{
-					if (debugMode)
-						Debug.Log("Successfully found seat to switch to in same cart");
-					return;
-				}
-
-				// Next check if we're clicking on an empty seat in another cart
-				if (TrySwitchToAnotherCart(mousePosition))
-				{
-					if (debugMode)
-						Debug.Log("Successfully found seat to switch to in another cart");
-					return;
-				}
-
-				// Last priority: checking if we're clicking on a dead human to throw
-				if (TryThrowDeadHuman(mousePosition))
-				{
-					if (debugMode)
-						Debug.Log("Successfully found dead human to throw");
-					return;
-				}
-
-				if (debugMode)
-					Debug.Log("No valid action found for this click");
+				Vector2 inputPosition = Camera.main.ScreenToWorldPoint(touch.position);
+				ProcessInput(inputPosition);
 			}
 		}
 	}
+
+	private void ProcessInput(Vector2 inputPosition)
+	{
+
+		// Get mouse position in world space
+		Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+
+		if (debugMode)
+			Debug.Log($"Mouse clicked at position: {mousePosition}");
+
+		if (hidingSystem != null && hidingSystem.IsHidden)
+		{
+			if (TryUnhideToSeat(mousePosition))
+			{
+				if (debugMode)
+					Debug.Log("Unhiding via seat click");
+				return;
+			}
+		}
+		else
+		{
+
+			// First, prioritize attacking vulnerable humans directly in front of the zombie
+			if (TryEatHuman(mousePosition))
+			{
+				if (debugMode)
+					Debug.Log("Successfully found human to eat");
+				return;
+			}
+
+			// Next check if we're clicking on an adjacent seat in the same cart
+			if (TrySwitchToClickedSeat(mousePosition))
+			{
+				if (debugMode)
+					Debug.Log("Successfully found seat to switch to in same cart");
+				return;
+			}
+
+			// Next check if we're clicking on an empty seat in another cart
+			if (TrySwitchToAnotherCart(mousePosition))
+			{
+				if (debugMode)
+					Debug.Log("Successfully found seat to switch to in another cart");
+				return;
+			}
+
+			// Last priority: checking if we're clicking on a dead human to throw
+			if (TryThrowDeadHuman(mousePosition))
+			{
+				if (debugMode)
+					Debug.Log("Successfully found dead human to throw");
+				return;
+			}
+
+			if (debugMode)
+				Debug.Log("No valid action found for this click");
+		}
+	}
+
 	private bool TryUnhideToSeat(Vector2 mousePosition)
 	{
-		RollerCoasterCart[] allCarts = FindObjectsOfType<RollerCoasterCart>();
+		RollerCoasterCart[] allCarts = Object.FindObjectsByType<RollerCoasterCart>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 		foreach (RollerCoasterCart cart in allCarts)
 		{
@@ -136,7 +163,7 @@ public class ZombieController : MonoBehaviour
 				if (distance < seatClickRadius && !seat.isOccupied)
 				{
 					// Remove: hidingSystem.SetHideState(false);
-					ClearZombieOccupation();
+					ClearAllZombieSeats();
 					StartCoroutine(SwitchCart(cart, i));
 					return true;
 				}
@@ -145,11 +172,23 @@ public class ZombieController : MonoBehaviour
 
 		return false;
 	}
+	private IEnumerator FinishEatingAttempt()
+	{
+		float eatAnimLength = GetAnimationDuration(animator, eatingAttemptStateName);
+		yield return new WaitForSeconds(eatAnimLength);
+		isEating = false;
+	}
+	private IEnumerator FinishEating()
+	{
+		float eatAnimLength = GetAnimationDuration(animator, eatingStateName);
+		yield return new WaitForSeconds(eatAnimLength);
+		isEating = false;
+	}
 	private bool TryThrowDeadHuman(Vector2 mousePosition)
 	{
 
 		// Find all humans in the scene
-		HumanSeatOccupant[] allHumans = FindObjectsOfType<HumanSeatOccupant>();
+		HumanSeatOccupant[] allHumans = Object.FindObjectsByType<HumanSeatOccupant>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 		// Track the closest dead human that was directly clicked
 		HumanSeatOccupant clickedHuman = null;
@@ -336,7 +375,7 @@ public class ZombieController : MonoBehaviour
 	private bool TrySwitchToAnotherCart(Vector2 mousePosition)
 	{
 		// Find all carts in the scene
-		RollerCoasterCart[] allCarts = FindObjectsOfType<RollerCoasterCart>();
+		RollerCoasterCart[] allCarts = Object.FindObjectsByType<RollerCoasterCart>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 		foreach (RollerCoasterCart cart in allCarts)
 		{
@@ -375,11 +414,11 @@ public class ZombieController : MonoBehaviour
 				{
 					if (debugMode)
 						Debug.Log($"Moving to cart {cart.name}, seat {i}");
-					if (FindObjectOfType<RollerCoasterGameManager>().CurrentState != RollerCoasterGameManager.GameState.ZombieBoarding)
+					if (FindFirstObjectByType<RollerCoasterGameManager>().CurrentState != RollerCoasterGameManager.GameState.ZombieBoarding)
 					{
 						GetComponent<ZombieHidingSystem>().SetHideState(false);
 					}
-					ClearZombieOccupation();
+					ClearAllZombieSeats();
 					StartCoroutine(SwitchCart(cart, i));
 					return true;
 				}
@@ -392,7 +431,7 @@ public class ZombieController : MonoBehaviour
 	private bool TryEatHuman(Vector2 mousePosition)
 	{
 		// Find all humans in the scene
-		HumanSeatOccupant[] allHumans = FindObjectsOfType<HumanSeatOccupant>();
+		HumanSeatOccupant[] allHumans = Object.FindObjectsByType<HumanSeatOccupant>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 		// Track the human that was directly clicked
 		HumanSeatOccupant clickedHuman = null;
@@ -472,24 +511,70 @@ public class ZombieController : MonoBehaviour
 		// In TryEatHuman method, replace the attack section with:
 		if (clickedHuman != null && clickedController != null)
 		{
-			// NEW: Priority check for defensive state
+			RollerCoasterCart targetCart = clickedHuman.OccupiedSeat.GetComponentInParent<RollerCoasterCart>();
+			int targetSeatIndex = targetCart.GetSeatIndex(clickedHuman.OccupiedSeat);
+
+			// Force reset screaming state for seated humans
+			HumanScreamingState screamState = clickedHuman.GetComponent<HumanScreamingState>();
+			if (screamState != null && clickedHuman.IsSeated)
+			{
+				screamState.StopAllCoroutines();
+				screamState.IsScreaming = false;
+				Animator humanAnimator = clickedHuman.GetComponent<Animator>();
+				if (humanAnimator != null) humanAnimator.Play("Idle");
+			}
+
 			if (clickedController.IsDefensive())
 			{
-				// Get human's position data
-				RollerCoasterCart targetCart = clickedHuman.OccupiedSeat.GetComponentInParent<RollerCoasterCart>();
-				int targetSeatIndex = targetCart.GetSeatIndex(clickedHuman.OccupiedSeat);
 				animator.Play(eatingAttemptStateName);
+				bool isEatPlayed = false;
+				foreach (string audioSource in AudioHandler.instance.playingSoundNames)
+				{
+					if (audioSource == "Eat Attempt" || audioSource == "Eat Attemp")
+					{
+						isEatPlayed = true;
+						break;
+					}
+				}
+				if (isEatPlayed == true)
+				{
+					AudioHandler.instance.Stop("Eat");
+					AudioHandler.instance.Stop("Eat Attempt");
+					AudioHandler.instance.Play("Eat Attempt");
+				}
+				else
+				{
+					AudioHandler.instance.Play("Eat Attempt");
+				}
+				FinishEatingAttempt();
 				clickedController.EscapeAndDespawn();
 				StartCoroutine(CheckAdjacentAfterEscape(targetCart, targetSeatIndex));
 				return true;
 			}
 			else if (clickedController.IsVulnerable())
 			{
-				// Get cart and seat index BEFORE using them
-				RollerCoasterCart targetCart = clickedHuman.OccupiedSeat.GetComponentInParent<RollerCoasterCart>();
-				int targetSeatIndex = targetCart.GetSeatIndex(clickedHuman.OccupiedSeat);
-				targetHuman = clickedController;
 				animator.Play(eatingStateName);
+				bool isEatPlayed = false;
+				foreach (string audioSource in AudioHandler.instance.playingSoundNames)
+				{
+					if (audioSource == "Eat" || audioSource == "Eat Attemp")
+					{
+						isEatPlayed = true;
+						break;
+					}
+				}
+				if (isEatPlayed == true)
+				{
+					AudioHandler.instance.Stop("Eat Attempt");
+					AudioHandler.instance.Stop("Eat");
+					AudioHandler.instance.Play("Eat");
+				}
+				else
+				{
+					AudioHandler.instance.Play("Eat");
+				}
+				targetHuman = clickedController;
+				FinishEating();
 				StartCoroutine(CheckAdjacentAfterEscape(targetCart, targetSeatIndex));
 				return true;
 			}
@@ -611,24 +696,23 @@ public class ZombieController : MonoBehaviour
 		}
 		return 0f;
 	}
-	private void ClearZombieOccupation()
+	public void ClearAllZombieSeats()
 	{
-		if (currentCart != null && currentSeatIndex < currentCart.seats.Length)
+		if (allSeats == null) return;
+
+		foreach (RollerCoasterSeat seat in allSeats)
 		{
-			currentCart.seats[currentSeatIndex].SetZombieOccupation(false);
-		}
-	}
-	private void ClearAllZombieOccupation()
-	{
-		foreach (var seat in currentCart.seats)
-		{
-			seat.SetZombieOccupation(false);
+			if (seat != null)
+			{
+				seat.SetZombieOccupation(false);
+				Debug.Log($"Cleared zombie occupation flag for seat: {seat.name}");
+			}
 		}
 	}
 	// Call this when hiding starts
 	public void PrepareToHide()
 	{
-		ClearAllZombieOccupation();
+		ClearAllZombieSeats();
 	}
 	// This method will be called by the ZombieAnimationHandler
 	public void HandleEatingAnimationEnd()
@@ -636,7 +720,7 @@ public class ZombieController : MonoBehaviour
 		if (targetHuman != null)
 		{
 			targetHuman.Die(true); // Pass true for zombie-caused death
-			ZombieHungerSystem hungerSystem = FindObjectOfType<ZombieHungerSystem>();
+			ZombieHungerSystem hungerSystem = FindFirstObjectByType<ZombieHungerSystem>();
 			if (hungerSystem != null)
 			{
 				hungerSystem.DecreaseHunger();

@@ -38,7 +38,7 @@ public class HumanMovementController : MonoBehaviour
 		targetPosition = transform.position;
 
 		// Add to existing Awake
-		zombie = FindObjectOfType<ZombieController>();
+		zombie = FindFirstObjectByType<ZombieController>();
 		humanScreamState = GetComponent<HumanScreamingState>();
 	}
 
@@ -99,7 +99,7 @@ public class HumanMovementController : MonoBehaviour
 	}
 	private bool IsZombieNearby()
 	{
-		ZombieController zombie = FindObjectOfType<ZombieController>();
+		ZombieController zombie = FindFirstObjectByType<ZombieController>();
 		return zombie != null &&
 			   Vector3.Distance(transform.position, zombie.transform.position) < zombieDetectionRange &&
 			   !zombie.GetComponent<ZombieHidingSystem>().IsHidden;
@@ -107,7 +107,7 @@ public class HumanMovementController : MonoBehaviour
 	private bool ShouldReactToZombie()
 	{
 		// FIXED: More robust check for zombie visibility
-		RollerCoasterGameManager gameManager = FindObjectOfType<RollerCoasterGameManager>();
+		RollerCoasterGameManager gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
 		ZombieHidingSystem hidingSystem = zombie?.GetComponent<ZombieHidingSystem>();
 
 		// Critical fix - check if zombie OR hiding system is null, and ensure IsHidden is checked properly
@@ -136,7 +136,7 @@ public class HumanMovementController : MonoBehaviour
 		// If no position was provided, try to find the zombie
 		if (zombiePosition == default)
 		{
-			ZombieController zombie = FindObjectOfType<ZombieController>();
+			ZombieController zombie = FindFirstObjectByType<ZombieController>();
 			if (zombie != null)
 			{
 				zombiePosition = zombie.transform.position;
@@ -212,7 +212,7 @@ public class HumanMovementController : MonoBehaviour
 	private void MoveTowardsTarget()
 	{
 		// FIXED: More careful check for zombie visibility that prevents false positives
-		ZombieHidingSystem hidingSystem = FindObjectOfType<ZombieHidingSystem>();
+		ZombieHidingSystem hidingSystem = FindFirstObjectByType<ZombieHidingSystem>();
 		if (hidingSystem != null && !hidingSystem.IsHidden && !hidingSystem.IsHiding)
 		{
 			// Add debug to track this condition
@@ -234,7 +234,7 @@ public class HumanMovementController : MonoBehaviour
 		{
 			Debug.Log($"Human {gameObject.name} detected zombie during movement! Visible={zombieVisible}, InSeat={zombieInSeat}");
 			Vector3 zombiePosition = zombieVisible ?
-				FindObjectOfType<ZombieController>().transform.position :
+				FindFirstObjectByType<ZombieController>().transform.position :
 				GetComponent<HumanSeatOccupant>()?.AssignedSeat?.transform.position ?? transform.position;
 
 			ReactToZombiePresence(zombiePosition);

@@ -10,6 +10,8 @@ TagManager:
   - water
   - walls
   - skeletons
+  - Female
+  - Male
   layers:
   - Default
   - TransparentFX

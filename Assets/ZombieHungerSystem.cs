@@ -23,7 +23,7 @@ public class ZombieHungerSystem : MonoBehaviour
 
     private void Awake()
     {
-        gameManager = FindObjectOfType<RollerCoasterGameManager>();
+        gameManager = FindFirstObjectByType<RollerCoasterGameManager>();
         InitializeHungerUI();
     }
 

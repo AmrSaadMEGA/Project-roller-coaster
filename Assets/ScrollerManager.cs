@@ -188,23 +188,4 @@ public class ScrollerManager : MonoBehaviour
 
 		isTransitioning = false;
 	}
-
-	// For visualization in the editor
-#if UNITY_EDITOR
-	private void OnDrawGizmosSelected()
-	{
-		if (!Application.isPlaying)
-			return;
-
-		// Display current status
-		UnityEditor.Handles.color = Color.white;
-		string status = $"Rail: {railScroller?.scrollSpeed ?? 0:F1} → {targetRailSpeed:F1}\n" +
-						$"Background: {backgroundScroller?.scrollSpeed ?? 0:F1} → {targetBackgroundSpeed:F1}";
-
-		if (isTransitioning)
-			status += $"\nTransitioning: {(transitionTime / transitionDuration * 100):F0}%";
-
-		UnityEditor.Handles.Label(transform.position + Vector3.up * 2f, status);
-	}
-#endif
 }
